@@ -13,14 +13,17 @@
  */
 package io.trino.plugin.bigquery;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import io.trino.testing.AbstractTestIntegrationSmokeTest;
 import io.trino.testing.MaterializedResult;
 import io.trino.testing.QueryRunner;
+import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 import static io.trino.plugin.bigquery.BigQueryQueryRunner.BigQuerySqlExecutor;
 import static io.trino.spi.type.VarcharType.VARCHAR;
+import static io.trino.testing.DataProviders.toDataProvider;
 import static io.trino.testing.MaterializedResult.resultBuilder;
 import static io.trino.testing.assertions.Assert.assertEquals;
 import static io.trino.testing.sql.TestTable.randomTableSuffix;
@@ -155,5 +158,38 @@ public class TestBigQueryIntegrationSmokeTest
                         "   shippriority bigint NOT NULL,\n" +
                         "   comment varchar NOT NULL\n" +
                         ")");
+    }
+
+    @Test(dataProvider = "testTableNameDataProvider")
+    public void testCanSelectFromMixedCaseTables(String tableName)
+    {
+        tableName += "_" + randomTableSuffix();
+        String trinoTableName = "test.\"" + tableName + "\"";
+        String bigQueryTableName = "test.`" + tableName + "`";
+        try {
+            bigQuerySqlExecutor.execute("CREATE TABLE " + bigQueryTableName + " (key string, value string)");
+            bigQuerySqlExecutor.execute("INSERT INTO " + bigQueryTableName + " VALUES ('null value', NULL), ('sample value', 'abc'), ('other value', 'xyz')");
+            assertQuery("SELECT COUNT(*) FROM " + trinoTableName, "VALUES 3");
+
+            assertQuery("SELECT * FROM " + trinoTableName, "VALUES ('null value', NULL), ('sample value', 'abc'), ('other value', 'xyz')");
+            assertQuery("SELECT value FROM " + trinoTableName, "VALUES (NULL), ('abc'), ('xyz')");
+        }
+        finally {
+            bigQuerySqlExecutor.execute("DROP TABLE IF EXISTS " + bigQueryTableName);
+        }
+    }
+
+    @DataProvider
+    public static Object[][] testTableNameDataProvider()
+    {
+        return ImmutableList.builder()
+                .add("lowercase")
+                .add("UPPERCASE")
+                .add("MiXeD_CaSe")
+                .add("ambigious_table")
+                .add("ambigious_TABLE")
+                .build()
+                .stream()
+                .collect(toDataProvider());
     }
 }
