@@ -183,10 +183,10 @@ public class TestBigQueryIntegrationSmokeTest
     public static Object[][] testTableNameDataProvider()
     {
         return ImmutableList.builder()
-                .add("lowercase")
+//                .add("lowercase")
                 .add("UPPERCASE")
                 .add("MiXeD_CaSe")
-                .add("ambigious_table")
+//                .add("ambigious_table")
                 .add("ambigious_TABLE")
                 .build()
                 .stream()
