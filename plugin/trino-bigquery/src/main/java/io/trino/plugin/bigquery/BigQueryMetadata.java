@@ -13,17 +13,14 @@
  */
 package io.trino.plugin.bigquery;
 
-import com.google.cloud.bigquery.DatasetId;
 import com.google.cloud.bigquery.Field;
 import com.google.cloud.bigquery.Schema;
-import com.google.cloud.bigquery.Table;
 import com.google.cloud.bigquery.TableDefinition;
 import com.google.cloud.bigquery.TableId;
 import com.google.cloud.bigquery.TableInfo;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Streams;
 import io.airlift.log.Logger;
 import io.trino.spi.connector.Assignment;
 import io.trino.spi.connector.ColumnHandle;
@@ -51,8 +48,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-import static com.google.cloud.bigquery.TableDefinition.Type.TABLE;
-import static com.google.cloud.bigquery.TableDefinition.Type.VIEW;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static java.util.Objects.requireNonNull;
 import static java.util.function.Function.identity;
@@ -81,9 +76,8 @@ public class BigQueryMetadata
     public List<String> listSchemaNames(ConnectorSession session)
     {
         log.debug("listSchemaNames(session=%s)", session);
-        return Streams.stream(bigQueryClient.listDatasets(projectId))
-                .map(dataset -> dataset.getDatasetId().getDataset())
-                .filter(schemaName -> !schemaName.equalsIgnoreCase(INFORMATION_SCHEMA))
+        return bigQueryClient.listDatasets(projectId).stream()
+                .filter(this::filterSchema)
                 .collect(toImmutableList());
     }
 
@@ -91,39 +85,40 @@ public class BigQueryMetadata
     public List<SchemaTableName> listTables(ConnectorSession session, Optional<String> schemaName)
     {
         log.debug("listTables(session=%s, schemaName=%s)", session, schemaName);
-        return listTablesWithTypes(session, schemaName, TABLE);
-    }
-
-    @Override
-    public List<SchemaTableName> listViews(ConnectorSession session, Optional<String> schemaName)
-    {
-        log.debug("listViews(session=%s, schemaName=%s)", session, schemaName);
-        return listTablesWithTypes(session, schemaName, VIEW);
-    }
-
-    private List<SchemaTableName> listTablesWithTypes(ConnectorSession session, Optional<String> schemaName, TableDefinition.Type... types)
-    {
-        if (schemaName.isPresent() && schemaName.get().equalsIgnoreCase(INFORMATION_SCHEMA)) {
+        Optional<String> remoteSchema = schemaName.map(schema -> bigQueryClient.toRemoteDatasetName(projectId, schema));
+        if (remoteSchema.isPresent() && !filterSchema(remoteSchema.get())) {
             return ImmutableList.of();
         }
-        Set<String> schemaNames = schemaName.map(ImmutableSet::of)
-                .orElseGet(() -> ImmutableSet.copyOf(listSchemaNames(session)));
 
+        Set<String> schemaNames = remoteSchema.map(ImmutableSet::of)
+                .orElseGet(() -> ImmutableSet.copyOf(listSchemaNames(session)));
         ImmutableList.Builder<SchemaTableName> tableNames = ImmutableList.builder();
-        for (String datasetId : schemaNames) {
-            for (Table table : bigQueryClient.listTables(DatasetId.of(projectId, datasetId), types)) {
-                tableNames.add(new SchemaTableName(datasetId, table.getTableId().getTable()));
+        for (String schema : schemaNames) {
+            for (String table : bigQueryClient.listTables(projectId, schema)) {
+                tableNames.add(new SchemaTableName(schema, table));
             }
         }
         return tableNames.build();
+    }
+
+    private boolean filterSchema(String schemaName)
+    {
+        if (schemaName.equalsIgnoreCase(INFORMATION_SCHEMA)) {
+            return false;
+        }
+        return true;
     }
 
     @Override
     public ConnectorTableHandle getTableHandle(ConnectorSession session, SchemaTableName tableName)
     {
         log.debug("getTableHandle(session=%s, tableName=%s)", session, tableName);
-        TableInfo tableInfo = getBigQueryTable(tableName);
+        String remoteSchema = bigQueryClient.toRemoteDatasetName(projectId, tableName.getSchemaName());
+        String remoteTable = bigQueryClient.toRemoteTableName(projectId, tableName.getTableName());
+
+        TableInfo tableInfo = bigQueryClient.getTable(projectId, remoteSchema, remoteTable);
         if (tableInfo == null) {
+            // TODO should we log remote name instead of lowercased metadata name?
             log.debug("Table [%s.%s] was not found", tableName.getSchemaName(), tableName.getTableName());
             return null;
         }
@@ -138,6 +133,7 @@ public class BigQueryMetadata
 
     public ConnectorTableMetadata getTableMetadata(ConnectorSession session, SchemaTableName schemaTableName)
     {
+        // TOOD: Continue here >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
         ConnectorTableHandle table = getTableHandle(session, schemaTableName);
         if (table == null) {
             throw new TableNotFoundException(schemaTableName);

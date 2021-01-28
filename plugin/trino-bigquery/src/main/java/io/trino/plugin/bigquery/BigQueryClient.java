@@ -31,10 +31,8 @@ import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterators;
 import io.trino.spi.TrinoException;
 
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -55,9 +53,11 @@ import static java.util.UUID.randomUUID;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.stream.Collectors.joining;
 
-// holds caches and mappings
-// Trino converts the dataset and table names to lower case, while BigQuery is case sensitive
-// the mappings here keep the mappings
+/**
+ * Every schema/dataset or table being passed into BigQueryClient is assumed to be normalised and we try to find it's remote name (via cache or lookup).
+ * Every schema/dataset or table being returned from BigQueryClient is normalised to lowercase and the callers shouldn't care since Trino doesn't care.
+ * BigQueryClient wraps all BigQuery API calls and hence it will make adjustments where needed.
+ */
 class BigQueryClient
 {
     private final BigQuery bigQuery;
@@ -89,7 +89,7 @@ class BigQueryClient
         return ImmutableList.of(Type.TABLE, Type.VIEW);
     }
 
-    private String toRemoteDatasetName(String project, String dataset)
+    String toRemoteDatasetName(String project, String dataset)
     {
         requireNonNull(project, "project is null");
         requireNonNull(dataset, "dataset is null");
@@ -124,7 +124,7 @@ class BigQueryClient
                 .collect(toImmutableMap(dataset -> dataset.getDatasetId().getDataset().toLowerCase(ENGLISH), dataset -> dataset.getDatasetId().getDataset()));
     }
 
-    private String toRemoteTableName(String remoteDataset, String table)
+    String toRemoteTableName(String remoteDataset, String table)
     {
         requireNonNull(remoteDataset, "remoteDataset is null");
         requireNonNull(table, "table is null");
@@ -164,49 +164,34 @@ class BigQueryClient
                 .collect(toImmutableMap(table -> table.getTableId().getTable().toLowerCase(ENGLISH), table -> table.getTableId().getTable()));
     }
 
-    TableInfo getTable(TableId tableId)
-    {
-        TableId bigQueryTableId = tableIds.get(tableId);
-        Table table = bigQuery.getTable(bigQueryTableId != null ? bigQueryTableId : tableId);
-        if (table != null) {
-            tableIds.putIfAbsent(tableId, table.getTableId());
-            datasetIds.putIfAbsent(toDatasetId(tableId), toDatasetId(table.getTableId()));
-        }
-        return table;
-    }
-
-    DatasetId toDatasetId(TableId tableId)
-    {
-        return DatasetId.of(tableId.getProject(), tableId.getDataset());
-    }
-
     String getProjectId()
     {
         return bigQuery.getOptions().getProjectId();
     }
 
-    Iterable<Dataset> listDatasets(String projectId)
+    List<String> listDatasets(String project)
     {
-        Iterator<Dataset> datasets = bigQuery.listDatasets(projectId).iterateAll().iterator();
-        return () -> Iterators.transform(datasets, this::addDataSetMappingIfNeeded);
-    }
-
-    Iterable<Table> listTables(DatasetId datasetId, Type... types)
-    {
-        Set<Type> allowedTypes = ImmutableSet.copyOf(types);
-        DatasetId bigQueryDatasetId = datasetIds.getOrDefault(datasetId, datasetId);
-        Iterable<Table> allTables = bigQuery.listTables(bigQueryDatasetId).iterateAll();
-        return StreamSupport.stream(allTables.spliterator(), false)
-                .filter(table -> allowedTypes.contains(table.getDefinition().getType()))
+        return listDatasetsByLowerCase(project).keySet().stream()
                 .collect(toImmutableList());
     }
 
-    private Dataset addDataSetMappingIfNeeded(Dataset dataset)
+    List<String> listTables(String project, String dataset)
     {
-        DatasetId bigQueryDatasetId = dataset.getDatasetId();
-        DatasetId trinoDatasetId = DatasetId.of(bigQueryDatasetId.getProject(), bigQueryDatasetId.getDataset().toLowerCase(ENGLISH));
-        datasetIds.putIfAbsent(trinoDatasetId, bigQueryDatasetId);
-        return dataset;
+        DatasetId remoteDatasetId = DatasetId.of(project, toRemoteDatasetName(project, dataset));
+        Iterable<Table> allTables = bigQuery.listTables(remoteDatasetId).iterateAll();
+        return StreamSupport.stream(allTables.spliterator(), false)
+                .map(table -> table.getTableId().getTable())
+                .collect(toImmutableList());
+    }
+
+    TableInfo getTable(String project, String dataset, String table)
+    {
+        return bigQuery.getTable(TableId.of(project, dataset, table));
+    }
+
+    DatasetId toDatasetId(TableId tableId)
+    {
+        return DatasetId.of(tableId.getProject(), tableId.getDataset());
     }
 
     TableId createDestinationTable(TableId tableId)
