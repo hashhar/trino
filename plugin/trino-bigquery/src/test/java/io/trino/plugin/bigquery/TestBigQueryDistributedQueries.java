@@ -33,7 +33,7 @@ public class TestBigQueryDistributedQueries
     protected QueryRunner createQueryRunner()
             throws Exception
     {
-        return BigQueryQueryRunner.createQueryRunner(ImmutableMap.of());
+        return BigQueryQueryRunner.createQueryRunner(ImmutableMap.of(), ImmutableMap.of());
     }
 
     @Override

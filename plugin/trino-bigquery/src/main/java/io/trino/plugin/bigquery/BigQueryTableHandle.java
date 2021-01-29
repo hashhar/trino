@@ -19,6 +19,7 @@ import com.google.cloud.bigquery.TableId;
 import com.google.cloud.bigquery.TableInfo;
 import io.trino.spi.connector.ColumnHandle;
 import io.trino.spi.connector.ConnectorTableHandle;
+import io.trino.spi.connector.SchemaTableName;
 import io.trino.spi.predicate.TupleDomain;
 
 import java.util.List;
@@ -148,9 +149,9 @@ public class BigQueryTableHandle
                 .toString();
     }
 
-    public TableId getTableId()
+    public SchemaTableName getSchemaTableName()
     {
-        return TableId.of(projectId, schemaName, tableName);
+        return new SchemaTableName(schemaName, tableName);
     }
 
     BigQueryTableHandle withConstraint(TupleDomain<ColumnHandle> newConstraint)

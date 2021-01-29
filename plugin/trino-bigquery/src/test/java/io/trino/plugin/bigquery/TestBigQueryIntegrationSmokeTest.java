@@ -40,7 +40,7 @@ public class TestBigQueryIntegrationSmokeTest
             throws Exception
     {
         this.bigQuerySqlExecutor = new BigQuerySqlExecutor();
-        return BigQueryQueryRunner.createQueryRunner(ImmutableMap.of());
+        return BigQueryQueryRunner.createQueryRunner(ImmutableMap.of(), ImmutableMap.of("bigquery.case-insensitive-name-matching", "true"));
     }
 
     @Override
@@ -183,10 +183,10 @@ public class TestBigQueryIntegrationSmokeTest
     public static Object[][] testTableNameDataProvider()
     {
         return ImmutableList.builder()
-//                .add("lowercase")
+                .add("lowercase")
                 .add("UPPERCASE")
                 .add("MiXeD_CaSe")
-//                .add("ambigious_table")
+                .add("ambigious_table")
                 .add("ambigious_TABLE")
                 .build()
                 .stream()

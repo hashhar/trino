@@ -18,7 +18,6 @@ import com.google.cloud.bigquery.BigQueryException;
 import com.google.cloud.bigquery.Job;
 import com.google.cloud.bigquery.JobInfo;
 import com.google.cloud.bigquery.QueryJobConfiguration;
-import com.google.cloud.bigquery.Table;
 import com.google.cloud.bigquery.TableDefinition;
 import com.google.cloud.bigquery.TableId;
 import com.google.cloud.bigquery.TableInfo;
@@ -39,6 +38,7 @@ import java.util.concurrent.TimeUnit;
 
 import static io.trino.plugin.bigquery.BigQueryErrorCode.BIGQUERY_VIEW_DESTINATION_TABLE_CREATION_FAILED;
 import static io.trino.plugin.bigquery.BigQueryUtil.convertToBigQueryException;
+import static io.trino.spi.StandardErrorCode.NOT_FOUND;
 import static io.trino.spi.StandardErrorCode.NOT_SUPPORTED;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
@@ -71,8 +71,8 @@ public class ReadSessionCreator
 
     public Storage.ReadSession create(TableId table, List<String> selectedFields, Optional<String> filter, int parallelism)
     {
-        TableInfo tableDetails = bigQueryClient.getTable(table);
-
+        // TODO: what to throw here? earlier it was NPE.
+        TableInfo tableDetails = bigQueryClient.getTable(table).orElseThrow(() -> new TrinoException(NOT_FOUND, "Table not found: " + table));
         TableInfo actualTable = getActualTable(tableDetails, selectedFields);
 
         List<String> filteredSelectedFields = selectedFields.stream()
@@ -86,7 +86,7 @@ public class ReadSessionCreator
 
             TableReferenceProto.TableReference tableReference = toTableReference(actualTable.getTableId());
 
-            Storage.ReadSession readSession = bigQueryStorageClient.createReadSession(
+            return bigQueryStorageClient.createReadSession(
                     Storage.CreateReadSessionRequest.newBuilder()
                             .setParent("projects/" + bigQueryClient.getProjectId())
                             .setFormat(Storage.DataFormat.AVRO)
@@ -97,8 +97,6 @@ public class ReadSessionCreator
                             // assign roughly the same number of rows to each stream.
                             .setShardingStrategy(Storage.ShardingStrategy.BALANCED)
                             .build());
-
-            return readSession;
         }
     }
 
@@ -136,11 +134,10 @@ public class ReadSessionCreator
                 throw new TrinoException(BIGQUERY_VIEW_DESTINATION_TABLE_CREATION_FAILED, "Error creating destination table", e);
             }
         }
-        else {
-            // not regular table or a view
-            throw new TrinoException(NOT_SUPPORTED, format("Table type '%s' of table '%s.%s' is not supported",
-                    tableType, table.getTableId().getDataset(), table.getTableId().getTable()));
-        }
+
+        // not regular table or a view
+        throw new TrinoException(NOT_SUPPORTED, format("Table type '%s' of table '%s.%s' is not supported",
+                tableType, table.getTableId().getDataset(), table.getTableId().getTable()));
     }
 
     private static class DestinationTableBuilder
@@ -167,7 +164,7 @@ public class ReadSessionCreator
 
         TableInfo createTableFromQuery()
         {
-            TableId destinationTable = bigQueryClient.createDestinationTable(table);
+            TableId destinationTable = bigQueryClient.createDestinationTableId(table);
             log.debug("destinationTable is %s", destinationTable);
             JobInfo jobInfo = JobInfo.of(
                     QueryJobConfiguration
@@ -181,13 +178,13 @@ public class ReadSessionCreator
                 throw convertToBigQueryException(job.getStatus().getError());
             }
             // add expiration time to the table
-            TableInfo createdTable = bigQueryClient.getTable(destinationTable);
+            // TODO: what to throw here? Earlier it was NPE.
+            TableInfo createdTable = bigQueryClient.getTable(destinationTable).orElseThrow(() -> new TrinoException(NOT_FOUND, "Table not found: " + table));
             long expirationTime = createdTable.getCreationTime() +
                     TimeUnit.HOURS.toMillis(config.viewExpirationTimeInHours);
-            Table updatedTable = bigQueryClient.update(createdTable.toBuilder()
+            return bigQueryClient.update(createdTable.toBuilder()
                     .setExpirationTime(expirationTime)
                     .build());
-            return updatedTable;
         }
 
         Job waitForJob(Job job)

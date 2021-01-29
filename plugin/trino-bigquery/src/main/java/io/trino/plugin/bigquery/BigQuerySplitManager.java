@@ -42,6 +42,7 @@ import static com.google.cloud.bigquery.TableDefinition.Type.TABLE;
 import static com.google.cloud.bigquery.TableDefinition.Type.VIEW;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static io.trino.plugin.bigquery.BigQueryErrorCode.BIGQUERY_FAILED_TO_EXECUTE_QUERY;
+import static io.trino.spi.StandardErrorCode.NOT_FOUND;
 import static io.trino.spi.StandardErrorCode.NOT_SUPPORTED;
 import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.toList;
@@ -85,7 +86,7 @@ public class BigQuerySplitManager
         log.debug("getSplits(transaction=%s, session=%s, table=%s, splitSchedulingStrategy=%s)", transaction, session, table, splitSchedulingStrategy);
         BigQueryTableHandle bigQueryTableHandle = (BigQueryTableHandle) table;
 
-        TableId tableId = bigQueryTableHandle.getTableId();
+        TableId tableId = TableId.of(bigQueryTableHandle.getProjectId(), bigQueryTableHandle.getSchemaName(), bigQueryTableHandle.getTableName());
         int actualParallelism = parallelism.orElse(nodeManager.getRequiredWorkerNodes().size());
         TupleDomain<ColumnHandle> constraint = bigQueryTableHandle.getConstraint();
         Optional<String> filter = BigQueryFilterQueryBuilder.buildFilter(constraint);
@@ -129,7 +130,8 @@ public class BigQuerySplitManager
             }
             else {
                 // no filters, so we can take the value from the table info when the object is TABLE
-                TableInfo tableInfo = bigQueryClient.getTable(tableId);
+                // TODO: What to throw if not found, earlier it was NPE
+                TableInfo tableInfo = bigQueryClient.getTable(tableId).orElseThrow(() -> new TrinoException(NOT_FOUND, "Table not found: " + tableId));
                 if (tableInfo.getDefinition().getType() == TABLE) {
                     numberOfRows = tableInfo.getNumRows().longValue();
                 }

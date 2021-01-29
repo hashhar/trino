@@ -13,11 +13,6 @@
  */
 package io.trino.plugin.bigquery;
 
-import com.google.cloud.bigquery.Field;
-import com.google.cloud.bigquery.Schema;
-import com.google.cloud.bigquery.TableDefinition;
-import com.google.cloud.bigquery.TableId;
-import com.google.cloud.bigquery.TableInfo;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
@@ -33,7 +28,6 @@ import io.trino.spi.connector.ConnectorTableProperties;
 import io.trino.spi.connector.Constraint;
 import io.trino.spi.connector.ConstraintApplicationResult;
 import io.trino.spi.connector.LimitApplicationResult;
-import io.trino.spi.connector.NotFoundException;
 import io.trino.spi.connector.ProjectionApplicationResult;
 import io.trino.spi.connector.SchemaTableName;
 import io.trino.spi.connector.SchemaTablePrefix;
@@ -49,9 +43,9 @@ import java.util.Optional;
 import java.util.Set;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
+import static com.google.common.collect.ImmutableMap.toImmutableMap;
 import static java.util.Objects.requireNonNull;
 import static java.util.function.Function.identity;
-import static java.util.stream.Collectors.toMap;
 
 public class BigQueryMetadata
         implements ConnectorMetadata
@@ -78,23 +72,32 @@ public class BigQueryMetadata
         log.debug("listSchemaNames(session=%s)", session);
         return bigQueryClient.listDatasets(projectId).stream()
                 .filter(this::filterSchema)
+                // TODO: should we lowercase even though bigQueryClient returns lowercase
                 .collect(toImmutableList());
+    }
+
+    @Override
+    public ConnectorTableHandle getTableHandle(ConnectorSession session, SchemaTableName tableName)
+    {
+        log.debug("getTableHandle(session=%s, tableName=%s)", session, tableName);
+        return bigQueryClient.getTableHandle(projectId, tableName.getSchemaName(), tableName.getTableName())
+                .orElse(null);
     }
 
     @Override
     public List<SchemaTableName> listTables(ConnectorSession session, Optional<String> schemaName)
     {
         log.debug("listTables(session=%s, schemaName=%s)", session, schemaName);
-        Optional<String> remoteSchema = schemaName.map(schema -> bigQueryClient.toRemoteDatasetName(projectId, schema));
-        if (remoteSchema.isPresent() && !filterSchema(remoteSchema.get())) {
+        if (schemaName.isPresent() && !filterSchema(schemaName.get())) {
             return ImmutableList.of();
         }
 
-        Set<String> schemaNames = remoteSchema.map(ImmutableSet::of)
+        Set<String> schemaNames = schemaName.map(ImmutableSet::of)
                 .orElseGet(() -> ImmutableSet.copyOf(listSchemaNames(session)));
         ImmutableList.Builder<SchemaTableName> tableNames = ImmutableList.builder();
         for (String schema : schemaNames) {
             for (String table : bigQueryClient.listTables(projectId, schema)) {
+                // TODO: should we lowercase or assume the inputs were lowercase too? table is already lowercase (returned by bigQueryClient)
                 tableNames.add(new SchemaTableName(schema, table));
             }
         }
@@ -110,77 +113,26 @@ public class BigQueryMetadata
     }
 
     @Override
-    public ConnectorTableHandle getTableHandle(ConnectorSession session, SchemaTableName tableName)
-    {
-        log.debug("getTableHandle(session=%s, tableName=%s)", session, tableName);
-        String remoteSchema = bigQueryClient.toRemoteDatasetName(projectId, tableName.getSchemaName());
-        String remoteTable = bigQueryClient.toRemoteTableName(projectId, tableName.getTableName());
-
-        TableInfo tableInfo = bigQueryClient.getTable(projectId, remoteSchema, remoteTable);
-        if (tableInfo == null) {
-            // TODO should we log remote name instead of lowercased metadata name?
-            log.debug("Table [%s.%s] was not found", tableName.getSchemaName(), tableName.getTableName());
-            return null;
-        }
-        return BigQueryTableHandle.from(tableInfo);
-    }
-
-    // May return null
-    private TableInfo getBigQueryTable(SchemaTableName tableName)
-    {
-        // TODO: Remove this
-        return bigQueryClient.getTable(TableId.of(projectId, tableName.getSchemaName(), tableName.getTableName()));
-    }
-
-    public ConnectorTableMetadata getTableMetadata(ConnectorSession session, SchemaTableName schemaTableName)
-    {
-        // TOOD: Continue here >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-        ConnectorTableHandle table = getTableHandle(session, schemaTableName);
-        if (table == null) {
-            throw new TableNotFoundException(schemaTableName);
-        }
-        return getTableMetadata(session, table);
-    }
-
-    @Override
     public ConnectorTableMetadata getTableMetadata(ConnectorSession session, ConnectorTableHandle tableHandle)
     {
         log.debug("getTableMetadata(session=%s, tableHandle=%s)", session, tableHandle);
-        TableInfo table = bigQueryClient.getTable(((BigQueryTableHandle) tableHandle).getTableId());
-        SchemaTableName schemaTableName = new SchemaTableName(table.getTableId().getDataset(), table.getTableId().getTable());
-        Schema schema = table.getDefinition().getSchema();
-        List<ColumnMetadata> columns = schema == null ?
-                ImmutableList.of() :
-                schema.getFields().stream()
-                        .map(Conversions::toColumnMetadata)
-                        .collect(toImmutableList());
-        return new ConnectorTableMetadata(schemaTableName, columns);
+        BigQueryTableHandle handle = (BigQueryTableHandle) tableHandle;
+
+        ImmutableList.Builder<ColumnMetadata> columnMetadata = ImmutableList.builder();
+        for (BigQueryColumnHandle column : bigQueryClient.getColumns(handle)) {
+            columnMetadata.add(column.getColumnMetadata());
+        }
+
+        return new ConnectorTableMetadata(handle.getSchemaTableName(), columnMetadata.build());
     }
 
     @Override
     public Map<String, ColumnHandle> getColumnHandles(ConnectorSession session, ConnectorTableHandle tableHandle)
     {
         log.debug("getColumnHandles(session=%s, tableHandle=%s)", session, tableHandle);
-        List<BigQueryColumnHandle> columnHandles = getTableColumns(((BigQueryTableHandle) tableHandle).getTableId());
-        return columnHandles.stream().collect(toMap(BigQueryColumnHandle::getName, identity()));
-    }
 
-    List<BigQueryColumnHandle> getTableColumns(TableId tableId)
-    {
-        return getTableColumns(bigQueryClient.getTable(tableId));
-    }
-
-    private List<BigQueryColumnHandle> getTableColumns(TableInfo table)
-    {
-        ImmutableList.Builder<BigQueryColumnHandle> columns = ImmutableList.builder();
-        TableDefinition tableDefinition = table.getDefinition();
-        Schema schema = tableDefinition.getSchema();
-        if (schema != null) {
-            for (Field field : schema.getFields()) {
-                columns.add(Conversions.toColumnHandle(field));
-            }
-        }
-        return columns.build();
+        return bigQueryClient.getColumns((BigQueryTableHandle) tableHandle).stream()
+                .collect(toImmutableMap(columnHandle -> columnHandle.getColumnMetadata().getName(), identity()));
     }
 
     @Override
@@ -197,29 +149,20 @@ public class BigQueryMetadata
     public Map<SchemaTableName, List<ColumnMetadata>> listTableColumns(ConnectorSession session, SchemaTablePrefix prefix)
     {
         log.debug("listTableColumns(session=%s, prefix=%s)", session, prefix);
-        requireNonNull(prefix, "prefix is null");
         ImmutableMap.Builder<SchemaTableName, List<ColumnMetadata>> columns = ImmutableMap.builder();
-        for (SchemaTableName tableName : listTables(session, prefix)) {
+        List<SchemaTableName> tables = prefix.toOptionalSchemaTableName()
+                .<List<SchemaTableName>>map(ImmutableList::of)
+                .orElseGet(() -> listTables(session, prefix.getSchema()));
+        for (SchemaTableName tableName : tables) {
             try {
-                columns.put(tableName, getTableMetadata(session, tableName).getColumns());
+                Optional.ofNullable(getTableHandle(session, tableName))
+                        .ifPresent(tableHandle -> columns.put(tableName, getTableMetadata(session, tableHandle).getColumns()));
             }
-            catch (NotFoundException e) {
+            catch (TableNotFoundException e) {
                 // table disappeared during listing operation
             }
         }
         return columns.build();
-    }
-
-    private List<SchemaTableName> listTables(ConnectorSession session, SchemaTablePrefix prefix)
-    {
-        if (prefix.getTable().isEmpty()) {
-            return listTables(session, prefix.getSchema());
-        }
-        SchemaTableName tableName = prefix.toSchemaTableName();
-        TableInfo tableInfo = getBigQueryTable(tableName);
-        return tableInfo == null ?
-                ImmutableList.of() : // table does not exist
-                ImmutableList.of(tableName);
     }
 
     @Override

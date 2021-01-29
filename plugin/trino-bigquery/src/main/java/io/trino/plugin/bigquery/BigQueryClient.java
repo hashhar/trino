@@ -20,6 +20,7 @@ import com.google.cloud.bigquery.DatasetId;
 import com.google.cloud.bigquery.Job;
 import com.google.cloud.bigquery.JobInfo;
 import com.google.cloud.bigquery.QueryJobConfiguration;
+import com.google.cloud.bigquery.Schema;
 import com.google.cloud.bigquery.Table;
 import com.google.cloud.bigquery.TableDefinition.Type;
 import com.google.cloud.bigquery.TableId;
@@ -31,12 +32,11 @@ import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.collect.ImmutableList;
 import io.trino.spi.TrinoException;
+import io.trino.spi.connector.TableNotFoundException;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.stream.StreamSupport;
 
 import static com.google.common.base.MoreObjects.firstNonNull;
@@ -63,8 +63,6 @@ class BigQueryClient
     private final BigQuery bigQuery;
     private final Optional<String> viewMaterializationProject;
     private final Optional<String> viewMaterializationDataset;
-    private final ConcurrentMap<TableId, TableId> tableIds = new ConcurrentHashMap<>();
-    private final ConcurrentMap<DatasetId, DatasetId> datasetIds = new ConcurrentHashMap<>();
     private final boolean caseInsensitiveNameMatching;
     // lowercase dataset name mapped to remote dataset name
     private final Cache<String, String> remoteDatasetNames;
@@ -189,23 +187,55 @@ class BigQueryClient
                 .collect(toImmutableMap(table -> table.getTableId().getTable().toLowerCase(ENGLISH), table -> table.getTableId().getTable()));
     }
 
-    TableInfo getTable(String projectId, String dataset, String table)
+    Optional<BigQueryTableHandle> getTableHandle(String projectId, String dataset, String table)
     {
-        // TODO: check if this is needed
         requireNonNull(projectId, "projectId is null");
         requireNonNull(dataset, "dataset is null");
         requireNonNull(table, "table is null");
 
-        return bigQuery.getTable(TableId.of(projectId, toRemoteDatasetName(projectId, dataset), toRemoteTableName(projectId, dataset, table)));
+        return Optional.ofNullable(bigQuery.getTable(TableId.of(projectId, toRemoteDatasetName(projectId, dataset), toRemoteTableName(projectId, dataset, table))))
+                .map(BigQueryTableHandle::from);
     }
 
-    TableId createDestinationTable(String projectId, String dataset)
+    List<BigQueryColumnHandle> getColumns(BigQueryTableHandle tableHandle)
     {
-        // TODO: why is this needed?
-        // TODO: check if this needs to be public and if the dataset names should be normalized in some way or asserted that they are lowercase
-        String destinationProjectId = viewMaterializationProject.orElse(projectId);
-        // TODO: maybe the dataset name should be converted to remoteDatasetName since we are only creating the table, not the dataset (old code used the dataset cache so it most likely used the remote names)
-        String destinationDataset = viewMaterializationDataset.orElse(dataset);
+        String remoteDatasetName = toRemoteDatasetName(tableHandle.getProjectId(), tableHandle.getSchemaName());
+        String remoteTableName = toRemoteTableName(tableHandle.getProjectId(), tableHandle.getSchemaName(), tableHandle.getTableName());
+        TableInfo tableInfo = bigQuery.getTable(TableId.of(tableHandle.getProjectId(), remoteDatasetName, remoteTableName));
+        if (tableInfo == null) {
+            throw new TableNotFoundException(
+                    tableHandle.getSchemaTableName(),
+                    format("Table '%s' not found", tableHandle.getSchemaTableName()));
+        }
+
+        Schema schema = tableInfo
+                .getDefinition()
+                .getSchema();
+        if (schema == null) {
+            return ImmutableList.of();
+        }
+
+        return schema.getFields()
+                .stream()
+                .map(Conversions::toColumnHandle)
+                .collect(toImmutableList());
+    }
+
+    // Methods that take input as BigQuery API models
+
+    Optional<TableInfo> getTable(TableId tableId)
+    {
+        requireNonNull(tableId, "tableId is null");
+        String remoteDataset = toRemoteDatasetName(tableId.getProject(), tableId.getDataset());
+        String remoteTable = toRemoteTableName(tableId.getProject(), tableId.getDataset(), tableId.getTable());
+        return Optional.ofNullable(bigQuery.getTable(TableId.of(tableId.getProject(), remoteDataset, remoteTable)));
+    }
+
+    TableId createDestinationTableId(TableId tableId)
+    {
+        requireNonNull(tableId, "tableId is null");
+        String destinationProjectId = viewMaterializationProject.orElse(tableId.getProject());
+        String destinationDataset = viewMaterializationDataset.orElse(toRemoteDatasetName(tableId.getProject(), tableId.getDataset()));
         String name = format("_pbc_%s", randomUUID().toString().toLowerCase(ENGLISH).replace("-", ""));
         return TableId.of(destinationProjectId, destinationDataset, name);
     }
@@ -213,18 +243,19 @@ class BigQueryClient
     Table update(TableInfo table)
     {
         // TODO: why is this needed? Only used by ReadSessionCreator.
+        // TODO: ReadSessionCreator calls this to mark an existing table with an expiration, let's rename this and
+        //  change impl to expire the provided table name by fetching and then creating a builder and setting expiry on the builder
+        // TODO: we want to avoid inputs as BigQuery API models
         return bigQuery.update(table);
     }
 
     Job create(JobInfo jobInfo)
     {
-        // TODO: why is this needed? Only used by ReadSessionCreator.
         return bigQuery.create(jobInfo);
     }
 
     TableResult query(String sql)
     {
-        // TODO: used by SplitManager
         try {
             return bigQuery.query(QueryJobConfiguration.of(sql));
         }
@@ -234,28 +265,36 @@ class BigQueryClient
         }
     }
 
-    String selectSql(TableId table, List<String> requiredColumns)
+    String selectSql(TableId tableId, List<String> requiredColumns)
     {
-        // TODO: why is this needed? Only used by ReadSessionCreator.
+        requireNonNull(tableId, "tableId is null");
+
         String columns = requiredColumns.isEmpty() ? "*" :
                 // TODO: add constant/method for quoting column/object names
                 requiredColumns.stream().map(column -> format("`%s`", column)).collect(joining(","));
 
-        return selectSql(table, columns);
+        return selectSql(tableId, columns);
     }
 
     // assuming the SELECT part is properly formatted, can be used to call functions such as COUNT and SUM
-    String selectSql(TableId table, String formattedColumns)
+    String selectSql(TableId tableId, String formattedColumns)
     {
-        // TODO: should table name be converted to remote name? Older code used the cache so most likely yes.
-        String tableName = fullTableName(table);
-        return format("SELECT %s FROM `%s`", formattedColumns, tableName);
+        requireNonNull(tableId, "tableId is null");
+
+        String remoteDatasetName = toRemoteDatasetName(tableId.getProject(), tableId.getDataset());
+        String remoteTableName = toRemoteTableName(tableId.getProject(), tableId.getDataset(), tableId.getTable());
+        String fullyQualifiedTableName = fullyQualifiedTableName(tableId.getProject(), remoteDatasetName, remoteTableName);
+        return format("SELECT %s FROM `%s`", formattedColumns, fullyQualifiedTableName);
     }
 
-    private String fullTableName(TableId tableId)
+    private String fullyQualifiedTableName(String projectId, String dataset, String table)
     {
-        // TODO: Either remove or make this fetch remote table names and dataset names.
-        tableId = tableIds.getOrDefault(tableId, tableId);
-        return format("%s.%s.%s", tableId.getProject(), tableId.getDataset(), tableId.getTable());
+        // TODO: add proper quoting to handle special characters and case
+        return format("%s.%s.%s", projectId, dataset, table);
+    }
+
+    String getProjectId()
+    {
+        return requireNonNull(bigQuery.getOptions().getProjectId(), "projectId is null");
     }
 }
