@@ -128,6 +128,7 @@ public class BigQueryMetadata
     // May return null
     private TableInfo getBigQueryTable(SchemaTableName tableName)
     {
+        // TODO: Remove this
         return bigQueryClient.getTable(TableId.of(projectId, tableName.getSchemaName(), tableName.getTableName()));
     }
 

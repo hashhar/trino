@@ -30,13 +30,11 @@ import com.google.common.base.CharMatcher;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
 import io.trino.spi.TrinoException;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.stream.StreamSupport;
@@ -187,11 +185,6 @@ class BigQueryClient
     TableInfo getTable(String project, String dataset, String table)
     {
         return bigQuery.getTable(TableId.of(project, dataset, table));
-    }
-
-    DatasetId toDatasetId(TableId tableId)
-    {
-        return DatasetId.of(tableId.getProject(), tableId.getDataset());
     }
 
     TableId createDestinationTable(TableId tableId)

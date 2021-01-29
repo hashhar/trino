@@ -61,6 +61,7 @@ public class BigQueryTableHandle
 
     public static BigQueryTableHandle from(TableInfo tableInfo)
     {
+        // TODO: Shouldn't depend on any BigQuery API class
         TableId tableId = tableInfo.getTableId();
         String type = tableInfo.getDefinition().getType().toString();
         return new BigQueryTableHandle(tableId.getProject(), tableId.getDataset(), tableId.getTable(), type, TupleDomain.all(), Optional.empty(), OptionalLong.empty());
