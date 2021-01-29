@@ -52,9 +52,11 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.stream.Collectors.joining;
 
 /**
- * Every schema/dataset or table being passed into BigQueryClient is assumed to be normalised and we try to find it's remote name (via cache or lookup).
- * Every schema/dataset or table being returned from BigQueryClient is normalised to lowercase and the callers shouldn't care since Trino doesn't care.
- * BigQueryClient wraps all BigQuery API calls and hence it will make adjustments where needed.
+ * BigQueryClient wraps all BigQuery API calls.
+ *
+ * Private methods expect the remote dataset/table names as input.
+ * Public/package-private methods expect the input is lowercase and will try to lookup remote dataset/table names.
+ * Public/package-private methods return lowercase output since ConnectorMetadata doesn't care about the case.
  */
 class BigQueryClient
 {
@@ -64,7 +66,9 @@ class BigQueryClient
     private final ConcurrentMap<TableId, TableId> tableIds = new ConcurrentHashMap<>();
     private final ConcurrentMap<DatasetId, DatasetId> datasetIds = new ConcurrentHashMap<>();
     private final boolean caseInsensitiveNameMatching;
+    // lowercase dataset name mapped to remote dataset name
     private final Cache<String, String> remoteDatasetNames;
+    // remote dataset name mapped to map of lowercase table name to remote table name
     private final Cache<String, Map<String, String>> remoteTableNames;
 
     BigQueryClient(BigQuery bigQuery, BigQueryConfig config)
@@ -87,9 +91,9 @@ class BigQueryClient
         return ImmutableList.of(Type.TABLE, Type.VIEW);
     }
 
-    String toRemoteDatasetName(String project, String dataset)
+    private String toRemoteDatasetName(String projectId, String dataset)
     {
-        requireNonNull(project, "project is null");
+        requireNonNull(projectId, "projectId is null");
         requireNonNull(dataset, "dataset is null");
         verify(CharMatcher.forPredicate(Character::isUpperCase).matchesNoneOf(dataset), "Expected dataset name from internal metadata to be lowercase: %s", dataset);
         if (!caseInsensitiveNameMatching) {
@@ -100,12 +104,13 @@ class BigQueryClient
             String remoteDatasetName = remoteDatasetNames.getIfPresent(dataset);
             if (remoteDatasetName == null) {
                 // this might be a new dataset, force reload
-                remoteDatasetNames.putAll(listDatasetsByLowerCase(project));
+                remoteDatasetNames.putAll(listDatasetsByLowerCase(projectId));
             }
             remoteDatasetName = remoteDatasetNames.getIfPresent(dataset);
             if (remoteDatasetName != null) {
                 return remoteDatasetName;
             }
+            // TODO: should we fail if remoteDatasetName == null since this means that the dataset doesn't exist on the remote?
         }
         catch (RuntimeException e) {
             throw new TrinoException(BIGQUERY_OBJECT_NOT_FOUND, "Failed to find remote dataset name: " + firstNonNull(e.getMessage(), e), e);
@@ -114,17 +119,26 @@ class BigQueryClient
         return dataset;
     }
 
-    private Map<String, String> listDatasetsByLowerCase(String project)
+    List<String> listDatasets(String projectId)
     {
-        Iterable<Dataset> datasets = bigQuery.listDatasets(project).iterateAll();
+        requireNonNull(projectId, "projectId is null");
+        return listDatasetsByLowerCase(projectId).keySet().stream()
+                .collect(toImmutableList());
+    }
+
+    private Map<String, String> listDatasetsByLowerCase(String projectId)
+    {
+        requireNonNull(projectId, "projectId is null");
+        Iterable<Dataset> datasets = bigQuery.listDatasets(projectId).iterateAll();
         return StreamSupport.stream(datasets.spliterator(), false)
                 // will throw on collision to avoid ambiguity
                 .collect(toImmutableMap(dataset -> dataset.getDatasetId().getDataset().toLowerCase(ENGLISH), dataset -> dataset.getDatasetId().getDataset()));
     }
 
-    String toRemoteTableName(String remoteDataset, String table)
+    private String toRemoteTableName(String projectId, String dataset, String table)
     {
-        requireNonNull(remoteDataset, "remoteDataset is null");
+        requireNonNull(projectId, "projectId is null");
+        requireNonNull(dataset, "dataset is null");
         requireNonNull(table, "table is null");
         verify(CharMatcher.forPredicate(Character::isUpperCase).matchesNoneOf(table), "Expected table name from internal metadata to be lowercase: %s", table);
         if (!caseInsensitiveNameMatching) {
@@ -132,19 +146,22 @@ class BigQueryClient
         }
 
         try {
+            String remoteDataset = toRemoteDatasetName(projectId, dataset);
+
             Map<String, String> mapping = remoteTableNames.getIfPresent(remoteDataset);
             if (mapping != null && !mapping.containsKey(table)) {
                 // this might be a new table, force reload
                 mapping = null;
             }
             if (mapping == null) {
-                mapping = listTablesByLowerCase(remoteDataset);
+                mapping = listTablesByLowerCase(projectId, remoteDataset);
                 remoteTableNames.put(remoteDataset, mapping);
             }
             String remoteTableName = mapping.get(table);
             if (remoteTableName != null) {
                 return remoteTableName;
             }
+            // TODO: should we fail if remoteTableName == null because this means that the table doesn't exist on the remote?
         }
         catch (RuntimeException e) {
             throw new TrinoException(BIGQUERY_OBJECT_NOT_FOUND, "Failed to find remote table name: " + firstNonNull(e.getMessage(), e), e);
@@ -153,67 +170,61 @@ class BigQueryClient
         return table;
     }
 
-    private Map<String, String> listTablesByLowerCase(String remoteDataset)
+    List<String> listTables(String projectId, String dataset)
     {
-        Iterable<Table> tables = bigQuery.listTables(remoteDataset).iterateAll();
+        requireNonNull(projectId, "projectId is null");
+        requireNonNull(dataset, "dataset is null");
+        return listTablesByLowerCase(projectId, toRemoteDatasetName(projectId, dataset)).keySet().stream()
+                .collect(toImmutableList());
+    }
+
+    private Map<String, String> listTablesByLowerCase(String projectId, String remoteDataset)
+    {
+        requireNonNull(projectId, "projectId is null");
+        requireNonNull(remoteDataset, "remoteDataset is null");
+        Iterable<Table> tables = bigQuery.listTables(DatasetId.of(projectId, remoteDataset)).iterateAll();
         return StreamSupport.stream(tables.spliterator(), false)
                 .filter(table -> getTableTypes().contains(table.getDefinition().getType()))
                 // will throw on collision to avoid ambiguity
                 .collect(toImmutableMap(table -> table.getTableId().getTable().toLowerCase(ENGLISH), table -> table.getTableId().getTable()));
     }
 
-    String getProjectId()
+    TableInfo getTable(String projectId, String dataset, String table)
     {
-        return bigQuery.getOptions().getProjectId();
+        // TODO: check if this is needed
+        requireNonNull(projectId, "projectId is null");
+        requireNonNull(dataset, "dataset is null");
+        requireNonNull(table, "table is null");
+
+        return bigQuery.getTable(TableId.of(projectId, toRemoteDatasetName(projectId, dataset), toRemoteTableName(projectId, dataset, table)));
     }
 
-    List<String> listDatasets(String project)
+    TableId createDestinationTable(String projectId, String dataset)
     {
-        return listDatasetsByLowerCase(project).keySet().stream()
-                .collect(toImmutableList());
-    }
-
-    List<String> listTables(String project, String dataset)
-    {
-        DatasetId remoteDatasetId = DatasetId.of(project, toRemoteDatasetName(project, dataset));
-        Iterable<Table> allTables = bigQuery.listTables(remoteDatasetId).iterateAll();
-        return StreamSupport.stream(allTables.spliterator(), false)
-                .map(table -> table.getTableId().getTable())
-                .collect(toImmutableList());
-    }
-
-    TableInfo getTable(String project, String dataset, String table)
-    {
-        return bigQuery.getTable(TableId.of(project, dataset, table));
-    }
-
-    TableId createDestinationTable(TableId tableId)
-    {
-        String project = viewMaterializationProject.orElse(tableId.getProject());
-        String dataset = viewMaterializationDataset.orElse(tableId.getDataset());
-        DatasetId datasetId = mapIfNeeded(project, dataset);
+        // TODO: why is this needed?
+        // TODO: check if this needs to be public and if the dataset names should be normalized in some way or asserted that they are lowercase
+        String destinationProjectId = viewMaterializationProject.orElse(projectId);
+        // TODO: maybe the dataset name should be converted to remoteDatasetName since we are only creating the table, not the dataset (old code used the dataset cache so it most likely used the remote names)
+        String destinationDataset = viewMaterializationDataset.orElse(dataset);
         String name = format("_pbc_%s", randomUUID().toString().toLowerCase(ENGLISH).replace("-", ""));
-        return TableId.of(datasetId.getProject(), datasetId.getDataset(), name);
-    }
-
-    private DatasetId mapIfNeeded(String project, String dataset)
-    {
-        DatasetId datasetId = DatasetId.of(project, dataset);
-        return datasetIds.getOrDefault(datasetId, datasetId);
+        return TableId.of(destinationProjectId, destinationDataset, name);
     }
 
     Table update(TableInfo table)
     {
+        // TODO: why is this needed? Only used by ReadSessionCreator.
         return bigQuery.update(table);
     }
 
     Job create(JobInfo jobInfo)
     {
+        // TODO: why is this needed? Only used by ReadSessionCreator.
         return bigQuery.create(jobInfo);
     }
 
     TableResult query(String sql)
     {
+        // TODO: used by SplitManager
         try {
             return bigQuery.query(QueryJobConfiguration.of(sql));
         }
@@ -225,7 +236,9 @@ class BigQueryClient
 
     String selectSql(TableId table, List<String> requiredColumns)
     {
+        // TODO: why is this needed? Only used by ReadSessionCreator.
         String columns = requiredColumns.isEmpty() ? "*" :
+                // TODO: add constant/method for quoting column/object names
                 requiredColumns.stream().map(column -> format("`%s`", column)).collect(joining(","));
 
         return selectSql(table, columns);
@@ -234,12 +247,14 @@ class BigQueryClient
     // assuming the SELECT part is properly formatted, can be used to call functions such as COUNT and SUM
     String selectSql(TableId table, String formattedColumns)
     {
+        // TODO: should table name be converted to remote name? Older code used the cache so most likely yes.
         String tableName = fullTableName(table);
         return format("SELECT %s FROM `%s`", formattedColumns, tableName);
     }
 
     private String fullTableName(TableId tableId)
     {
+        // TODO: Either remove or make this fetch remote table names and dataset names.
         tableId = tableIds.getOrDefault(tableId, tableId);
         return format("%s.%s.%s", tableId.getProject(), tableId.getDataset(), tableId.getTable());
     }
