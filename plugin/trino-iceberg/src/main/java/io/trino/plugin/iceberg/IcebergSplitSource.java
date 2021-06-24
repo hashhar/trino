@@ -19,6 +19,7 @@ import io.trino.spi.connector.ConnectorPartitionHandle;
 import io.trino.spi.connector.ConnectorSplit;
 import io.trino.spi.connector.ConnectorSplitSource;
 import org.apache.iceberg.CombinedScanTask;
+import org.apache.iceberg.ContentFile;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.io.CloseableIterable;
 
@@ -30,6 +31,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
+import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.Iterators.limit;
 import static io.trino.plugin.iceberg.IcebergUtil.getPartitionKeys;
 import static java.util.Objects.requireNonNull;
@@ -88,6 +90,10 @@ public class IcebergSplitSource
         //       so when we do not use residual expression, we are just wasting CPU cycles
         //       on reader side evaluating a condition that we know will always be true.
 
+        List<String> deleteFilePaths = task.deletes().stream()
+                .map(ContentFile::path)
+                .map(CharSequence::toString)
+                .collect(toImmutableList());
         return new IcebergSplit(
                 task.file().path().toString(),
                 task.start(),
@@ -95,6 +101,7 @@ public class IcebergSplitSource
                 task.file().fileSizeInBytes(),
                 task.file().format(),
                 ImmutableList.of(),
-                getPartitionKeys(task));
+                getPartitionKeys(task),
+                deleteFilePaths);
     }
 }

@@ -66,6 +66,7 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hdfs.BlockMissingException;
 import org.apache.iceberg.FileFormat;
+import org.apache.iceberg.MetadataColumns;
 import org.apache.parquet.column.ColumnDescriptor;
 import org.apache.parquet.hadoop.metadata.BlockMetaData;
 import org.apache.parquet.hadoop.metadata.FileMetaData;
@@ -112,6 +113,7 @@ import static io.trino.plugin.iceberg.IcebergSessionProperties.isOrcBloomFilters
 import static io.trino.plugin.iceberg.IcebergSessionProperties.isOrcNestedLazy;
 import static io.trino.plugin.iceberg.IcebergSessionProperties.isUseFileSizeFromMetadata;
 import static io.trino.plugin.iceberg.TypeConverter.ORC_ICEBERG_ID_KEY;
+import static io.trino.plugin.iceberg.TypeConverter.toIcebergType;
 import static io.trino.spi.StandardErrorCode.NOT_SUPPORTED;
 import static java.lang.String.format;
 import static java.util.Locale.ENGLISH;
@@ -174,6 +176,7 @@ public class IcebergPageSourceProvider
                 split.getFileSize(),
                 split.getFileFormat(),
                 regularColumns,
+                split.getDeletePaths(),
                 table.getUnenforcedPredicate());
 
         return new IcebergPageSource(icebergColumns, partitionKeys, dataPageSource, session.getTimeZoneKey());
@@ -188,6 +191,7 @@ public class IcebergPageSourceProvider
             long fileSize,
             FileFormat fileFormat,
             List<IcebergColumnHandle> dataColumns,
+            List<String> deletePaths,
             TupleDomain<IcebergColumnHandle> predicate)
     {
         if (!isUseFileSizeFromMetadata(session)) {
@@ -199,6 +203,10 @@ public class IcebergPageSourceProvider
             catch (IOException e) {
                 throw new TrinoException(ICEBERG_FILESYSTEM_ERROR, e);
             }
+        }
+
+        if (deletePaths != null && !deletePaths.isEmpty()) {
+            int positionColumnId = MetadataColumns.DELETE_FILE_POS.fieldId();
         }
 
         switch (fileFormat) {

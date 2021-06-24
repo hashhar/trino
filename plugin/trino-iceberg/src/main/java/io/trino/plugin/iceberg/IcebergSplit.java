@@ -38,6 +38,7 @@ public class IcebergSplit
     private final FileFormat fileFormat;
     private final List<HostAddress> addresses;
     private final Map<Integer, String> partitionKeys;
+    private final List<String> deletePaths;
 
     @JsonCreator
     public IcebergSplit(
@@ -47,7 +48,8 @@ public class IcebergSplit
             @JsonProperty("fileSize") long fileSize,
             @JsonProperty("fileFormat") FileFormat fileFormat,
             @JsonProperty("addresses") List<HostAddress> addresses,
-            @JsonProperty("partitionKeys") Map<Integer, String> partitionKeys)
+            @JsonProperty("partitionKeys") Map<Integer, String> partitionKeys,
+            @JsonProperty("deletePaths") List<String> deleteFilePaths)
     {
         this.path = requireNonNull(path, "path is null");
         this.start = start;
@@ -56,6 +58,7 @@ public class IcebergSplit
         this.fileFormat = requireNonNull(fileFormat, "fileFormat is null");
         this.addresses = ImmutableList.copyOf(requireNonNull(addresses, "addresses is null"));
         this.partitionKeys = Collections.unmodifiableMap(requireNonNull(partitionKeys, "partitionKeys is null"));
+        this.deletePaths = ImmutableList.copyOf(requireNonNull(deleteFilePaths, "deleteFilePaths is null"));
     }
 
     @Override
@@ -107,6 +110,12 @@ public class IcebergSplit
         return partitionKeys;
     }
 
+    @JsonProperty
+    public List<String> getDeletePaths()
+    {
+        return deletePaths;
+    }
+
     @Override
     public Object getInfo()
     {
@@ -114,6 +123,7 @@ public class IcebergSplit
                 .put("path", path)
                 .put("start", start)
                 .put("length", length)
+                .put("deletePaths", deletePaths)
                 .build();
     }
 
@@ -124,6 +134,7 @@ public class IcebergSplit
                 .addValue(path)
                 .addValue(start)
                 .addValue(length)
+                .addValue(deletePaths)
                 .toString();
     }
 }

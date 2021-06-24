@@ -137,6 +137,9 @@ public final class Standard
                 .withStartupCheckStrategy(new IsRunningStartupCheckStrategy())
                 .waitingForAll(forLogMessage(".*======== SERVER STARTED ========.*", 1), forHealthcheck())
                 .withStartupTimeout(Duration.ofMinutes(5));
+        if (logicalName.equals(WORKER)) {
+            container.withCommand("sh -c 'rm /docker/presto-product-tests/conf/presto/etc/catalog/hive.properties && /docker/presto-product-tests/run-presto.sh'");
+        }
         if (debug) {
             enablePrestoJavaDebugger(container);
         }
