@@ -211,13 +211,13 @@ public abstract class BaseJdbcConnectorTest
                 hasBehavior(SUPPORTS_PREDICATE_PUSHDOWN_WITH_VARCHAR_EQUALITY),
                 node(FilterNode.class, node(TableScanNode.class)));
         // aggregation on varchar column
-        assertThat(query("SELECT min(name) FROM nation")).isFullyPushedDown();
+        assertThat(query("SELECT count(name) FROM nation")).isFullyPushedDown();
         // aggregation on varchar column with GROUPING
-        assertThat(query("SELECT nationkey, min(name) FROM nation GROUP BY nationkey")).isFullyPushedDown();
+        assertThat(query("SELECT nationkey, count(name) FROM nation GROUP BY nationkey")).isFullyPushedDown();
         // aggregation on varchar column with WHERE
         assertConditionallyPushedDown(
                 getSession(),
-                "SELECT min(name) FROM nation WHERE name = 'ARGENTINA'",
+                "SELECT count(name) FROM nation WHERE name = 'ARGENTINA'",
                 hasBehavior(SUPPORTS_PREDICATE_PUSHDOWN_WITH_VARCHAR_EQUALITY),
                 node(FilterNode.class, node(TableScanNode.class)));
     }
@@ -328,7 +328,11 @@ public abstract class BaseJdbcConnectorTest
         // distinct aggregation with GROUP BY
         assertThat(query(withMarkDistinct, "SELECT count(DISTINCT nationkey) FROM nation GROUP BY regionkey")).isFullyPushedDown();
         // distinct aggregation with varchar
-        assertThat(query(withMarkDistinct, "SELECT count(DISTINCT comment) FROM nation")).isFullyPushedDown();
+        assertConditionallyPushedDown(
+                withMarkDistinct,
+                "SELECT count(DISTINCT comment) FROM nation",
+                hasBehavior(SUPPORTS_PREDICATE_PUSHDOWN_WITH_VARCHAR_INEQUALITY),
+                node(AggregationNode.class, node(ProjectNode.class, node(TableScanNode.class))));
         // two distinct aggregations
         assertThat(query(withMarkDistinct, "SELECT count(DISTINCT regionkey), count(DISTINCT nationkey) FROM nation"))
                 .isNotFullyPushedDown(MarkDistinctNode.class, ExchangeNode.class, ExchangeNode.class, ProjectNode.class);
@@ -344,7 +348,11 @@ public abstract class BaseJdbcConnectorTest
         // distinct aggregation with GROUP BY
         assertThat(query(withoutMarkDistinct, "SELECT count(DISTINCT nationkey) FROM nation GROUP BY regionkey")).isFullyPushedDown();
         // distinct aggregation with varchar
-        assertThat(query(withoutMarkDistinct, "SELECT count(DISTINCT comment) FROM nation")).isFullyPushedDown();
+        assertConditionallyPushedDown(
+                withoutMarkDistinct,
+                "SELECT count(DISTINCT comment) FROM nation",
+                hasBehavior(SUPPORTS_PREDICATE_PUSHDOWN_WITH_VARCHAR_INEQUALITY),
+                node(AggregationNode.class, node(ProjectNode.class, node(TableScanNode.class))));
         // two distinct aggregations
         assertThat(query(withoutMarkDistinct, "SELECT count(DISTINCT regionkey), count(DISTINCT nationkey) FROM nation"))
                 .isNotFullyPushedDown(AggregationNode.class, ExchangeNode.class, ExchangeNode.class);
@@ -646,7 +654,7 @@ public abstract class BaseJdbcConnectorTest
                 aggregationOverTableScan);
         assertConditionallyPushedDown(
                 getSession(),
-                "SELECT regionkey, max(name) FROM nation GROUP BY regionkey LIMIT 5",
+                "SELECT regionkey, max(nationkey) FROM nation GROUP BY regionkey LIMIT 5",
                 hasBehavior(SUPPORTS_AGGREGATION_PUSHDOWN),
                 aggregationOverTableScan);
 
