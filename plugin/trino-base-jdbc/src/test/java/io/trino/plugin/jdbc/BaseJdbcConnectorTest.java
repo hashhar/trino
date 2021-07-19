@@ -195,7 +195,7 @@ public abstract class BaseJdbcConnectorTest
         // GROUP BY above TopN
         assertConditionallyPushedDown(
                 getSession(),
-                "SELECT clerk, sum(totalprice) FROM (SELECT clerk, totalprice FROM orders ORDER BY orderdate ASC, totalprice ASC LIMIT 10) GROUP BY clerk",
+                "SELECT custkey, sum(totalprice) FROM (SELECT custkey, totalprice FROM orders ORDER BY orderdate ASC, totalprice ASC LIMIT 10) GROUP BY custkey",
                 hasBehavior(SUPPORTS_TOPN_PUSHDOWN),
                 node(TopNNode.class, anyTree(node(TableScanNode.class))));
         // GROUP BY with JOIN
