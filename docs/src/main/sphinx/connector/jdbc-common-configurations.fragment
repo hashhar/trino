@@ -22,3 +22,6 @@ General configuration properties
     - Cache the fact that metadata, including table and column statistics, is
       not available
     - False
+  * - ``allow-drop-table``
+    - Allow connectors to drop tables
+    - False
