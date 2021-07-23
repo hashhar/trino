@@ -37,3 +37,9 @@ General configuration properties
   * - ``write.batch-size``
     - Maximum number of rows to insert in a single batch
     - 1000
+  * - ``insert.non-transactional-insert.enabled``
+    - Controls how INSERTs are performed. Enabling this will perform writes
+      directly to the underlying table which can be faster in some cases but
+      is non-transactional and can leave the table in an inconsistent state if
+      the INSERT fails.
+    - False
