@@ -25,3 +25,12 @@ General configuration properties
   * - ``allow-drop-table``
     - Allow connectors to drop tables
     - False
+  * - ``join-pushdown.enabled``
+    - Enable join pushdown
+    - False
+  * - ``aggregation-pushdown.enabled``
+    - Enable aggregation pushdown
+    - True
+  * - ``topn-pushdown.enabled``
+    - Enable TopN pushdown
+    - True
