@@ -61,6 +61,8 @@ Property Name                                      Required   Description
                                                               connection properties.  These files must exist on the machines running Trino.
 ================================================== ========== ===================================================================================
 
+.. include:: jdbc-common-configurations.fragment
+
 Querying Phoenix tables
 -------------------------
 

@@ -41,6 +41,8 @@ with a different name (making sure it ends in ``.properties``). For
 example, if you name the property file ``sales.properties``, Trino
 will create a catalog named ``sales`` using the configured connector.
 
+.. include:: jdbc-common-configurations.fragment
+
 Querying SingleStore
 --------------------
 

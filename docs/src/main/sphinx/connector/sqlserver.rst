@@ -61,6 +61,8 @@ To add another catalog:
 For example, if you name the property file ``sales.properties``, Trino uses the
 configured connector to create a catalog named ``sales``.
 
+.. include:: jdbc-common-configurations.fragment
+
 Querying SQL Server
 -------------------
 

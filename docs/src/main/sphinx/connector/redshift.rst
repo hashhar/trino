@@ -31,6 +31,8 @@ connection properties as appropriate for your setup:
     connection-user=root
     connection-password=secret
 
+.. include:: jdbc-common-configurations.fragment
+
 Multiple Redshift databases or clusters
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -43,6 +45,8 @@ To add another catalog, simply add another properties file to ``etc/catalog``
 with a different name, making sure it ends in ``.properties``. For example,
 if you name the property file ``sales.properties``, Trino creates a
 catalog named ``sales`` using the configured connector.
+
+.. include:: jdbc-common-configurations.fragment
 
 Querying Redshift
 -----------------

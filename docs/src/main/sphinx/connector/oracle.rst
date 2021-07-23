@@ -61,6 +61,8 @@ To add another Oracle catalog, create a new properties file. For example, if
 you name the property file ``sales.properties``, Trino creates a catalog named
 sales.
 
+.. include:: jdbc-common-configurations.fragment
+
 Querying Oracle
 ---------------
 
