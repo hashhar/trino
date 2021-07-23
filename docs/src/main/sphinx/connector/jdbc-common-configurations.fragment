@@ -38,8 +38,10 @@ General configuration properties
     - Maximum number of rows to insert in a single batch
     - 1000
   * - ``insert.non-transactional-insert.enabled``
-    - Controls how INSERTs are performed. Enabling this will perform writes
-      directly to the underlying table which can be faster in some cases but
-      is non-transactional and can leave the table in an inconsistent state if
-      the INSERT fails.
+    - Controls how inserts are performed. By default, data insertion is
+      performed by writing data to a temporary table. Enabling this property
+      causes writes to happen directly to the target table.
+      In rare cases when exceptions occur during the insert operation, data in
+      the target table can be corrupted. Since transactions have been disabled
+      no rollback can be performed.
     - False
