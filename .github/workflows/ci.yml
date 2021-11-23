@@ -274,7 +274,7 @@ jobs:
           - ":trino-clickhouse"
           - ":trino-hive,:trino-orc"
           - ":trino-hive,:trino-orc -P test-full-orc"
-          - ":trino-hive,:trino-parquet -P test-parquet"
+          - ":trino-hive,:trino-parquet -P test-full-parquet"
           - ":trino-mongodb,:trino-kafka,:trino-elasticsearch"
           - ":trino-elasticsearch -P test-stats"
           - ":trino-redis"

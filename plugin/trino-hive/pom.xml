@@ -419,7 +419,7 @@
         </profile>
 
         <profile>
-            <id>test-parquet</id>
+            <id>test-full-parquet</id>
             <build>
                 <plugins>
                     <plugin>
