@@ -273,6 +273,7 @@ jobs:
           - ":trino-cassandra"
           - ":trino-clickhouse"
           - ":trino-hive,:trino-orc"
+          - ":trino-hive,:trino-orc -P test-full-orc"
           - ":trino-hive,:trino-parquet -P test-parquet"
           - ":trino-mongodb,:trino-kafka,:trino-elasticsearch"
           - ":trino-elasticsearch -P test-stats"
