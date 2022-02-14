@@ -68,4 +68,14 @@ jobs:
           platforms: arm64
       - name: Test Docker Image
         run: core/docker/build-local.sh
-
+      - name: See what's in archive
+        if: failure()
+        run: tar -tvf core/docker/failed_fs || true
+      - name: Upload failed fs
+        if: failure()
+        uses: actions/upload-artifact@v2
+        with:
+          name: docker fs
+          path: |
+            **/failed_fs
+          retention-days: 1

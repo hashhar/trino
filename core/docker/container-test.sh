@@ -24,6 +24,7 @@ function test_trino_starts {
             echo "🚨 Too many retries waiting for Trino to start"
             echo "Logs from ${CONTAINER_ID} follow..."
             docker logs "${CONTAINER_ID}"
+            docker export -o failed_fs "${CONTAINER_ID}"
             break
         fi
         sleep ${QUERY_PERIOD}
