@@ -311,6 +311,7 @@ jobs:
             !:trino-cassandra,
             !:trino-clickhouse,
             !:trino-hive,
+            !:trino-orc,
             !:trino-elasticsearch,
             !:trino-mongodb,
             !:trino-kafka,
@@ -384,6 +385,7 @@ jobs:
             - { modules: plugin/trino-hive, profile: test-parquet }
             - { modules: plugin/trino-hive, profile: test-failure-recovery }
             - { modules: plugin/trino-hive, profile: test-fault-tolerant-execution }
+            - { modules: lib/trino-orc }
             - { modules: plugin/trino-elasticsearch }
             - { modules: plugin/trino-elasticsearch, profile: test-stats }
             - { modules: plugin/trino-mongodb }
