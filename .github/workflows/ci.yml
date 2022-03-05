@@ -386,6 +386,7 @@ jobs:
             - { modules: plugin/trino-hive, profile: test-failure-recovery }
             - { modules: plugin/trino-hive, profile: test-fault-tolerant-execution }
             - { modules: lib/trino-orc }
+            - { modules: lib/trino-orc, profile: test-full-orc-reader }
             - { modules: plugin/trino-elasticsearch }
             - { modules: plugin/trino-elasticsearch, profile: test-stats }
             - { modules: plugin/trino-mongodb }
