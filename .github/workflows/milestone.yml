@@ -10,7 +10,6 @@ defaults:
 
 jobs:
   set-milestone:
-    if: github.repository_owner == 'trinodb'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
