@@ -46,31 +46,30 @@ jobs:
             const {
                 MILESTONE_NUMBER
             } = process.env
-            console.log(MILESTONE_NUMBER)
 
             // Find milestone
-            const response = await github.rest.issues.listMilestones({
+            const listMilestones = github.rest.issues.listMilestones({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 state: 'all'
             })
-            console.log(response)
+            const response = await github.paginate(listMilestones)
             let milestone = response.data.find(milestoneResponse => milestoneResponse.title === MILESTONE_NUMBER)
-            console.log(milestone)
+            console.log('findMilestone response', milestone)
 
             // Create new milestone if it doesn't exist
             if (!milestone) {
-                console.log('Creating new milestone')
+                console.log('Creating new milestone', !milestone)
                 const create_response = await github.rest.issues.createMilestone({
                     owner: context.repo.owner,
                     repo: context.repo.repo,
                     title: MILESTONE_NUMBER
                 })
-                console.log(create_response)
+                console.log('createMilestone response', create_response)
                 milestone = create_response.data
             }
 
-            console.log(milestone)
+            console.log('created milestone', milestone)
             // Set milestone to PR
             await github.rest.issues.update({
                 owner: context.repo.owner,
