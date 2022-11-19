@@ -51,11 +51,12 @@ jobs:
 
             // Find milestone with matching title
             // See https://octokit.github.io/rest.js/#pagination
-            const milestones = await github.paginate(github.rest.issues.listMilestones({
+            const list_milestones = github.rest.issues.listMilestones({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 state: 'all'
-            }))
+            })
+            const milestones = await github.paginate(list_milestones)
             console.log(milestones)
             let milestone = milestones.find(milestone => milestone.title === MILESTONE_NUMBER)
 
