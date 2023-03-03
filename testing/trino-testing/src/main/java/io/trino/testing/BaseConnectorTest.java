@@ -111,6 +111,7 @@ import static io.trino.testing.TestingConnectorBehavior.SUPPORTS_CREATE_TABLE_WI
 import static io.trino.testing.TestingConnectorBehavior.SUPPORTS_CREATE_VIEW;
 import static io.trino.testing.TestingConnectorBehavior.SUPPORTS_DELETE;
 import static io.trino.testing.TestingConnectorBehavior.SUPPORTS_DROP_COLUMN;
+import static io.trino.testing.TestingConnectorBehavior.SUPPORTS_DROP_FIELD;
 import static io.trino.testing.TestingConnectorBehavior.SUPPORTS_INSERT;
 import static io.trino.testing.TestingConnectorBehavior.SUPPORTS_MERGE;
 import static io.trino.testing.TestingConnectorBehavior.SUPPORTS_MULTI_STATEMENT_WRITES;
@@ -129,7 +130,6 @@ import static io.trino.testing.TestingConnectorBehavior.SUPPORTS_TOPN_PUSHDOWN;
 import static io.trino.testing.TestingConnectorBehavior.SUPPORTS_TRUNCATE;
 import static io.trino.testing.TestingConnectorBehavior.SUPPORTS_UPDATE;
 import static io.trino.testing.TestingNames.randomNameSuffix;
-import static io.trino.testing.assertions.Assert.assertEquals;
 import static io.trino.testing.assertions.Assert.assertEventually;
 import static io.trino.testing.assertions.TestUtil.verifyResultOrFailure;
 import static io.trino.transaction.TransactionBuilder.transaction;
@@ -147,6 +147,7 @@ import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toList;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertNull;
@@ -765,7 +766,13 @@ public abstract class BaseConnectorTest
     @Test
     public void testDescribeTable()
     {
-        MaterializedResult expectedColumns = MaterializedResult.resultBuilder(getSession(), VARCHAR, VARCHAR, VARCHAR, VARCHAR)
+        // TODO: this is redundant with testShowColumns()
+        assertThat(query("DESCRIBE orders")).matches(getDescribeOrdersResult());
+    }
+
+    protected MaterializedResult getDescribeOrdersResult()
+    {
+        return resultBuilder(getSession(), VARCHAR, VARCHAR, VARCHAR, VARCHAR)
                 .row("orderkey", "bigint", "", "")
                 .row("custkey", "bigint", "", "")
                 .row("orderstatus", "varchar(1)", "", "")
@@ -776,8 +783,6 @@ public abstract class BaseConnectorTest
                 .row("shippriority", "integer", "", "")
                 .row("comment", "varchar(79)", "", "")
                 .build();
-        MaterializedResult actualColumns = computeActual("DESCRIBE orders");
-        assertEquals(actualColumns, expectedColumns);
     }
 
     @Test
@@ -1349,14 +1354,11 @@ public abstract class BaseConnectorTest
         assertContains(actual, expected);
 
         // test SHOW COLUMNS
-        actual = computeActual("SHOW COLUMNS FROM " + viewName);
-
-        expected = resultBuilder(getSession(), VARCHAR, VARCHAR, VARCHAR, VARCHAR)
+        assertThat(query("SHOW COLUMNS FROM " + viewName))
+                .matches(resultBuilder(getSession(), VARCHAR, VARCHAR, VARCHAR, VARCHAR)
                 .row("x", "bigint", "", "")
                 .row("y", "varchar(3)", "", "")
-                .build();
-
-        assertEquals(actual, expected);
+                .build());
 
         // test SHOW CREATE VIEW
         String expectedSql = formatSqlText(format(
@@ -2171,6 +2173,121 @@ public abstract class BaseConnectorTest
     }
 
     @Test
+    public void testDropRowField()
+    {
+        if (!hasBehavior(SUPPORTS_DROP_FIELD)) {
+            if (!hasBehavior(SUPPORTS_DROP_COLUMN) || !hasBehavior(SUPPORTS_ROW_TYPE)) {
+                return;
+            }
+            try (TestTable table = new TestTable(getQueryRunner()::execute, "test_drop_field_", "AS SELECT CAST(row(1, 2) AS row(x integer, y integer)) AS col")) {
+                assertQueryFails(
+                        "ALTER TABLE " + table.getName() + " DROP COLUMN col.x",
+                        "This connector does not support dropping fields");
+            }
+            return;
+        }
+
+        try (TestTable table = new TestTable(getQueryRunner()::execute,
+                "test_drop_field_",
+                "AS SELECT CAST(row(1, 2, row(10, 20)) AS row(a integer, b integer, c row(x integer, y integer))) AS col")) {
+            assertEquals(getColumnType(table.getName(), "col"), "row(a integer, b integer, c row(x integer, y integer))");
+
+            assertUpdate("ALTER TABLE " + table.getName() + " DROP COLUMN col.b");
+            assertEquals(getColumnType(table.getName(), "col"), "row(a integer, c row(x integer, y integer))");
+            assertThat(query("SELECT * FROM " + table.getName())).matches("SELECT CAST(row(1, row(10, 20)) AS row(a integer, c row(x integer, y integer)))");
+
+            // Drop a nested field
+            assertUpdate("ALTER TABLE " + table.getName() + " DROP COLUMN col.c.y");
+            assertEquals(getColumnType(table.getName(), "col"), "row(a integer, c row(x integer))");
+            assertThat(query("SELECT * FROM " + table.getName())).matches("SELECT CAST(row(1, row(10)) AS row(a integer, c row(x integer)))");
+
+            // Verify failure when trying to drop unique field in nested row type
+            assertQueryFails("ALTER TABLE " + table.getName() + " DROP COLUMN col.c.x", ".* Cannot drop the only field in a row type");
+
+            // Verify failure when trying to drop non-existing fields
+            assertQueryFails(
+                    "ALTER TABLE " + table.getName() + " DROP COLUMN col.c.non_existing",
+                    "\\Qline 1:1: Cannot resolve field 'non_existing' within row(x integer) type when dropping [c, non_existing] in row(a integer, c row(x integer))");
+
+            // Drop a row having fields
+            assertUpdate("ALTER TABLE " + table.getName() + " DROP COLUMN col.c");
+            assertEquals(getColumnType(table.getName(), "col"), "row(a integer)");
+            assertThat(query("SELECT * FROM " + table.getName())).matches("SELECT CAST(row(1) AS row(a integer))");
+
+            // Specify non-existing fields with IF EXISTS option
+            assertUpdate("ALTER TABLE " + table.getName() + " DROP COLUMN IF EXISTS non_existing.a");
+            assertUpdate("ALTER TABLE " + table.getName() + " DROP COLUMN IF EXISTS col.non_existing");
+            assertEquals(getColumnType(table.getName(), "col"), "row(a integer)");
+        }
+    }
+
+    @Test
+    public void testDropRowFieldWhenDuplicates()
+    {
+        skipTestUnless(hasBehavior(SUPPORTS_DROP_FIELD));
+
+        try (TestTable table = new TestTable(getQueryRunner()::execute,
+                "test_drop_duplicated_field_",
+                "AS SELECT CAST(row(1, 2, 3) AS row(a integer, a integer, b integer)) AS col")) {
+            assertEquals(getColumnType(table.getName(), "col"), "row(a integer, a integer, b integer)");
+
+            assertQueryFails(
+                    "ALTER TABLE " + table.getName() + " DROP COLUMN col.a",
+                    "\\QField path [a] within row(a integer, a integer, b integer) is ambiguous");
+            assertEquals(getColumnType(table.getName(), "col"), "row(a integer, a integer, b integer)");
+        }
+    }
+
+    @Test
+    public void testDropRowFieldCaseSensitivity()
+    {
+        skipTestUnless(hasBehavior(SUPPORTS_DROP_FIELD));
+
+        try (TestTable table = new TestTable(getQueryRunner()::execute,
+                "test_drop_row_field_case_sensitivity_",
+                "AS SELECT CAST(row(1, 2) AS row(lower integer, \"UPPER\" integer)) AS col")) {
+            assertEquals(getColumnType(table.getName(), "col"), "row(lower integer, UPPER integer)");
+
+            assertQueryFails(
+                    "ALTER TABLE " + table.getName() + " DROP COLUMN col.LOWER",
+                    "\\Qline 1:1: Cannot resolve field 'LOWER' within row(lower integer, UPPER integer) type when dropping [LOWER] in row(lower integer, UPPER integer)");
+            assertQueryFails(
+                    "ALTER TABLE " + table.getName() + " DROP COLUMN col.upper",
+                    "\\Qline 1:1: Cannot resolve field 'upper' within row(lower integer, UPPER integer) type when dropping [upper] in row(lower integer, UPPER integer)");
+
+            assertUpdate("ALTER TABLE " + table.getName() + " DROP COLUMN col.\"UPPER\"");
+            assertEquals(getColumnType(table.getName(), "col"), "row(lower integer)");
+            assertThat(query("SELECT * FROM " + table.getName())).matches("SELECT CAST(row(1) AS row(lower integer))");
+        }
+    }
+
+    @Test
+    public void testDropAmbiguousRowFieldCaseSensitivity()
+    {
+        skipTestUnless(hasBehavior(SUPPORTS_DROP_FIELD));
+
+        try (TestTable table = new TestTable(getQueryRunner()::execute,
+                "test_drop_row_field_case_sensitivity_",
+                """
+                        AS SELECT CAST(row(1, 2, 3, 4, 5) AS
+                        row("sOME_FIELd" integer, "some_field" integer, "SomE_Field" integer, "SOME_FIELD" integer, "sOME_FieLd" integer)) AS col
+                        """)) {
+            assertEquals(getColumnType(table.getName(), "col"), "row(sOME_FIELd integer, some_field integer, SomE_Field integer, SOME_FIELD integer, sOME_FieLd integer)");
+
+            assertUpdate("ALTER TABLE " + table.getName() + " DROP COLUMN col.some_field");
+            assertEquals(getColumnType(table.getName(), "col"), "row(sOME_FIELd integer, SomE_Field integer, SOME_FIELD integer, sOME_FieLd integer)");
+
+            assertUpdate("ALTER TABLE " + table.getName() + " DROP COLUMN col.\"SomE_Field\"");
+            assertEquals(getColumnType(table.getName(), "col"), "row(sOME_FIELd integer, SOME_FIELD integer, sOME_FieLd integer)");
+
+            assertUpdate("ALTER TABLE " + table.getName() + " DROP COLUMN col.\"SOME_FIELD\"");
+            assertEquals(getColumnType(table.getName(), "col"), "row(sOME_FIELd integer, sOME_FieLd integer)");
+
+            assertThat(query("SELECT * FROM " + table.getName())).matches("SELECT CAST(row(1, 5) AS row(\"sOME_FIELd\" integer, \"sOME_FieLd\" integer))");
+        }
+    }
+
+    @Test
     public void testDropAndAddColumnWithSameName()
     {
         skipTestUnless(hasBehavior(SUPPORTS_DROP_COLUMN) && hasBehavior(SUPPORTS_ADD_COLUMN));
@@ -2247,7 +2364,15 @@ public abstract class BaseConnectorTest
     {
         skipTestUnless(hasBehavior(SUPPORTS_SET_COLUMN_TYPE) && hasBehavior(SUPPORTS_CREATE_TABLE_WITH_DATA));
 
-        try (TestTable table = new TestTable(getQueryRunner()::execute, "test_set_column_type_", " AS SELECT CAST(" + setup.sourceValueLiteral + " AS " + setup.sourceColumnType + ") AS col")) {
+        TestTable table;
+        try {
+            table = new TestTable(getQueryRunner()::execute, "test_set_column_type_", " AS SELECT CAST(" + setup.sourceValueLiteral + " AS " + setup.sourceColumnType + ") AS col");
+        }
+        catch (Exception e) {
+            verifyUnsupportedTypeException(e, setup.sourceColumnType);
+            throw new SkipException("Unsupported column type: " + setup.sourceColumnType);
+        }
+        try (table) {
             Runnable setColumnType = () -> assertUpdate("ALTER TABLE " + table.getName() + " ALTER COLUMN col SET DATA TYPE " + setup.newColumnType);
             if (setup.unsupportedType) {
                 assertThatThrownBy(setColumnType::run)
@@ -2260,10 +2385,6 @@ public abstract class BaseConnectorTest
             assertThat(query("SELECT * FROM " + table.getName()))
                     .skippingTypesCheck()
                     .matches("SELECT " + setup.newValueLiteral);
-        }
-        catch (Exception e) {
-            verifyUnsupportedTypeException(e, setup.sourceColumnType);
-            throw new SkipException("Unsupported column type: " + setup.sourceColumnType);
         }
     }
 
@@ -4331,7 +4452,7 @@ public abstract class BaseConnectorTest
         String tableName = "tcn_" + nameInSql.toLowerCase(ENGLISH).replaceAll("[^a-z0-9]", "") + randomNameSuffix();
 
         try {
-            assertUpdate("CREATE TABLE " + tableName + "(" + nameInSql + " varchar(50), value varchar(50))");
+            assertUpdate(createTableSqlForAddingAndDroppingColumn(tableName, nameInSql));
         }
         catch (RuntimeException e) {
             if (isColumnNameRejected(e, columnName, delimited)) {
@@ -4349,6 +4470,14 @@ public abstract class BaseConnectorTest
         assertTableColumnNames(tableName, "value", columnName.toLowerCase(ENGLISH));
 
         assertUpdate("DROP TABLE " + tableName);
+    }
+
+    /**
+     * Create a table with name "tableName" and with two columns: "columnNameInSql" varchar(50), value varchar(50)
+     */
+    protected String createTableSqlForAddingAndDroppingColumn(String tableName, String columnNameInSql)
+    {
+        return "CREATE TABLE " + tableName + "(" + columnNameInSql + " varchar(50), value varchar(50))";
     }
 
     @Test(dataProvider = "testColumnNameDataProvider")
@@ -4762,14 +4891,12 @@ public abstract class BaseConnectorTest
         assertQuery("SELECT count(*) FROM " + tableName + " WHERE mod(orderkey, 3) = 1", "SELECT 0");
 
         // verify untouched rows
-        assertEquals(
-                computeActual("SELECT count(*), cast(sum(totalprice) AS decimal(18,2)) FROM " + tableName + " WHERE mod(orderkey, 3) = 2"),
-                computeActual("SELECT count(*), cast(sum(totalprice) AS decimal(18,2)) FROM tpch.sf1.orders WHERE mod(orderkey, 3) = 2"));
+        assertThat(query("SELECT count(*), cast(sum(totalprice) AS decimal(18,2)) FROM " + tableName + " WHERE mod(orderkey, 3) = 2"))
+                .matches("SELECT count(*), cast(sum(totalprice) AS decimal(18,2)) FROM tpch.sf1.orders WHERE mod(orderkey, 3) = 2");
 
         // verify updated rows
-        assertEquals(
-                computeActual("SELECT count(*), cast(sum(totalprice) AS decimal(18,2)) FROM " + tableName + " WHERE mod(orderkey, 3) = 0"),
-                computeActual("SELECT count(*), cast(sum(totalprice * 2) AS decimal(18,2)) FROM tpch.sf1.orders WHERE mod(orderkey, 3) = 0"));
+        assertThat(query("SELECT count(*), cast(sum(totalprice) AS decimal(18,2)) FROM " + tableName + " WHERE mod(orderkey, 3) = 0"))
+                .matches("SELECT count(*), cast(sum(totalprice * 2) AS decimal(18,2)) FROM tpch.sf1.orders WHERE mod(orderkey, 3) = 0");
 
         assertUpdate("DROP TABLE " + tableName);
     }

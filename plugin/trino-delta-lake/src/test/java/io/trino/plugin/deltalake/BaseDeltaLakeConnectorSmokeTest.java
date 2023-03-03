@@ -70,7 +70,6 @@ import static io.trino.testing.TestingAccessControlManager.privilege;
 import static io.trino.testing.TestingConnectorBehavior.SUPPORTS_DELETE;
 import static io.trino.testing.TestingNames.randomNameSuffix;
 import static io.trino.testing.TestingSession.testSessionBuilder;
-import static io.trino.testing.assertions.Assert.assertEquals;
 import static io.trino.testing.assertions.Assert.assertEventually;
 import static io.trino.tpch.TpchTable.CUSTOMER;
 import static io.trino.tpch.TpchTable.LINE_ITEM;
@@ -81,6 +80,7 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertTrue;
 
@@ -347,9 +347,7 @@ public abstract class BaseDeltaLakeConnectorSmokeTest
                                 ")\n" +
                                 "WITH (\n" +
                                 "   location = '%s',\n" +
-                                "   partitioned_by = ARRAY['age'],\n" +
-                                "   reader_version = 1,\n" +
-                                "   writer_version = 2\n" +
+                                "   partitioned_by = ARRAY['age']\n" +
                                 ")",
                         SCHEMA,
                         getLocationForTable(bucketName, "person")));
@@ -478,9 +476,7 @@ public abstract class BaseDeltaLakeConnectorSmokeTest
                                 ")\n" +
                                 "WITH (\n" +
                                 "   location = '%s',\n" +
-                                "   partitioned_by = ARRAY['regionkey'],\n" +
-                                "   reader_version = 1,\n" +
-                                "   writer_version = 2\n" +
+                                "   partitioned_by = ARRAY['regionkey']\n" +
                                 ")",
                         DELTA_CATALOG, SCHEMA, tableName, getLocationForTable(bucketName, tableName)));
         assertQuery("SELECT * FROM " + tableName, "SELECT name, regionkey, comment FROM nation");
@@ -1351,9 +1347,7 @@ public abstract class BaseDeltaLakeConnectorSmokeTest
                                 ")\n" +
                                 "WITH (\n" +
                                 "   location = '%s',\n" +
-                                "   partitioned_by = ARRAY[%s],\n" +
-                                "   reader_version = 1,\n" +
-                                "   writer_version = 2\n" +
+                                "   partitioned_by = ARRAY[%s]\n" +
                                 ")",
                         getSession().getCatalog().orElseThrow(),
                         SCHEMA,
