@@ -48,7 +48,7 @@ packaging==20.3
     # via sphinx
 pillow==9.2.0
     # via -r requirements.in
-pygments==2.5.2
+pygments==2.15.0
     # via sphinx
 pyparsing==2.4.6
     # via packaging
