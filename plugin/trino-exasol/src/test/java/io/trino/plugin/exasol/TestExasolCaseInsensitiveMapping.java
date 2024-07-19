@@ -171,7 +171,7 @@ final class TestExasolCaseInsensitiveMapping
                     .collect(toImmutableSet()))
                     .containsOnly("lower_case_name", "mixed_case_name", "upper_case_name");
 
-            // Note: until https://github.com/prestodb/presto/issues/2863 is resolved, this is *the* way to access the tables.
+            // Note: until https://github.com/trinodb/trino/issues/17 is resolved, this is *the* way to access the tables.
 
             assertQuery("SELECT lower_case_name FROM someschema.nonlowercasetable", "VALUES 'a'");
             assertQuery("SELECT mixed_case_name FROM someschema.nonlowercasetable", "VALUES 'b'");
