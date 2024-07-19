@@ -25,16 +25,16 @@ public class TestSchemaEmulation
         final String tableNamePrefix;
         final String kuduTableName;
         final boolean valid;
-        final String prestoSchema;
-        final String prestoTable;
+        final String trinoSchema;
+        final String trinoTable;
 
-        Input(String tableNamePrefix, String kuduTableName, boolean valid, String prestoSchema, String prestoTable)
+        Input(String tableNamePrefix, String kuduTableName, boolean valid, String trinoSchema, String trinoTable)
         {
             this.tableNamePrefix = tableNamePrefix;
             this.kuduTableName = kuduTableName;
             this.valid = valid;
-            this.prestoSchema = prestoSchema;
-            this.prestoTable = prestoTable;
+            this.trinoSchema = trinoSchema;
+            this.trinoTable = trinoTable;
         }
     }
 
@@ -66,7 +66,7 @@ public class TestSchemaEmulation
             SchemaTableName schemaTableName = emulation.fromRawName(input.kuduTableName);
             assertThat(input.valid).isEqualTo(schemaTableName != null);
             if (input.valid) {
-                assertThat(schemaTableName).isEqualTo(new SchemaTableName(input.prestoSchema, input.prestoTable));
+                assertThat(schemaTableName).isEqualTo(new SchemaTableName(input.trinoSchema, input.trinoTable));
                 String raw = emulation.toRawName(schemaTableName);
                 assertThat(raw).isEqualTo(input.kuduTableName);
             }

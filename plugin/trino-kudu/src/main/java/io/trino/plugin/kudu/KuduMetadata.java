@@ -160,10 +160,10 @@ public class KuduMetadata
         }
         extra.append("compression=").append(compression);
 
-        Type prestoType = TypeHelper.fromKuduColumn(column);
+        Type trinoType = TypeHelper.fromKuduColumn(column);
         return ColumnMetadata.builder()
                 .setName(column.getName())
-                .setType(prestoType)
+                .setType(trinoType)
                 .setExtraInfo(Optional.of(extra.toString()))
                 .setProperties(properties)
                 .setComment(Optional.ofNullable(column.getComment()))
