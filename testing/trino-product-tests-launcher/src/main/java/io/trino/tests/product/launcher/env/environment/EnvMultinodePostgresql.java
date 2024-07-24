@@ -26,6 +26,8 @@ import io.trino.tests.product.launcher.testcontainers.PortBinder;
 import org.testcontainers.containers.startupcheck.IsRunningStartupCheckStrategy;
 
 import static io.trino.tests.product.launcher.docker.ContainerUtil.forSelectedPorts;
+import static io.trino.tests.product.launcher.env.EnvironmentContainers.COORDINATOR;
+import static io.trino.tests.product.launcher.env.common.Standard.CONTAINER_TRINO_ETC;
 import static java.util.Objects.requireNonNull;
 import static org.testcontainers.utility.MountableFile.forHostPath;
 
@@ -54,6 +56,8 @@ public final class EnvMultinodePostgresql
                 "postgresql",
                 forHostPath(dockerFiles.getDockerFilesHostPath("conf/environment/multinode-postgresql/postgresql.properties")));
         builder.addContainer(createPostgreSql());
+
+        builder.configureContainer(COORDINATOR, container -> container.withCopyFileToContainer(forHostPath(dockerFiles.getDockerFilesHostPath("conf/environment/multinode-postgresql/catalog-store.properties")), CONTAINER_TRINO_ETC + "/catalog-store.properties"));
     }
 
     @SuppressWarnings("resource")

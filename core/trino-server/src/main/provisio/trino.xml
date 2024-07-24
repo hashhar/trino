@@ -338,6 +338,12 @@
         </artifact>
     </artifactSet>
 
+    <artifactSet to="plugin/trino-db-catalog">
+        <artifact id="${project.groupId}:trino-db-catalog:zip:${project.version}">
+            <unpack />
+        </artifact>
+    </artifactSet>
+
     <artifactSet to="plugin/tpcds">
         <artifact id="${project.groupId}:trino-tpcds:zip:${project.version}">
             <unpack />
