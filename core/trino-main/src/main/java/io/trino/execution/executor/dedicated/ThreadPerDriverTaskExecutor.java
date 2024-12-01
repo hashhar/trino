@@ -82,7 +82,7 @@ public class ThreadPerDriverTaskExecutor
         this(
                 tracer,
                 versionEmbedder,
-                new FairScheduler(config.getMaxWorkerThreads(), "SplitRunner-%d", Ticker.systemTicker()),
+                new FairScheduler(config.getMaxWorkerThreads(), "SplitRunner-", Ticker.systemTicker()),
                 config.getMinDriversPerTask(),
                 config.getMaxDriversPerTask(),
                 config.getMinDrivers());
