@@ -203,7 +203,7 @@
         <dep.okhttp.version>5.3.2</dep.okhttp.version>
         <dep.okio.version>3.16.4</dep.okio.version>
         <dep.parquet.version>1.16.0</dep.parquet.version>
-        <dep.protobuf.version>3.25.8</dep.protobuf.version>
+        <dep.protobuf.version>4.33.2</dep.protobuf.version>
         <dep.swagger.version>2.2.41</dep.swagger.version>
         <dep.takari.version>2.3.2</dep.takari.version>
         <dep.tcnative.version>2.0.74.Final</dep.tcnative.version>
