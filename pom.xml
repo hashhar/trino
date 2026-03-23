@@ -27,6 +27,7 @@
         </license>
     </licenses>
 
+    <!-- Base modules: core, lib, clients, and testing libraries always included -->
     <modules>
         <module>client/trino-cli</module>
         <module>client/trino-client</module>
@@ -34,12 +35,9 @@
         <module>core/trino-grammar</module>
         <module>core/trino-main</module>
         <module>core/trino-parser</module>
-        <module>core/trino-server</module>
-        <module>core/trino-server-core</module>
         <module>core/trino-server-main</module>
         <module>core/trino-spi</module>
         <module>core/trino-web-ui</module>
-        <module>docs</module>
         <module>lib/trino-array</module>
         <module>lib/trino-cache</module>
         <module>lib/trino-filesystem</module>
@@ -59,85 +57,12 @@
         <module>lib/trino-parquet</module>
         <module>lib/trino-plugin-toolkit</module>
         <module>lib/trino-record-decoder</module>
-        <module>plugin/trino-ai-functions</module>
-        <module>plugin/trino-base-jdbc</module>
-        <module>plugin/trino-bigquery</module>
-        <module>plugin/trino-blackhole</module>
-        <module>plugin/trino-cassandra</module>
-        <module>plugin/trino-clickhouse</module>
-        <module>plugin/trino-datasketches</module>
-        <module>plugin/trino-delta-lake</module>
-        <module>plugin/trino-druid</module>
-        <module>plugin/trino-duckdb</module>
-        <module>plugin/trino-elasticsearch</module>
-        <module>plugin/trino-example-http</module>
-        <module>plugin/trino-example-jdbc</module>
-        <module>plugin/trino-exasol</module>
-        <module>plugin/trino-exchange-filesystem</module>
-        <module>plugin/trino-exchange-hdfs</module>
-        <module>plugin/trino-faker</module>
-        <module>plugin/trino-functions-python</module>
-        <module>plugin/trino-geospatial</module>
-        <module>plugin/trino-google-sheets</module>
-        <module>plugin/trino-hive</module>
-        <module>plugin/trino-http-event-listener</module>
-        <module>plugin/trino-http-server-event-listener</module>
-        <module>plugin/trino-hudi</module>
-        <module>plugin/trino-iceberg</module>
-        <module>plugin/trino-ignite</module>
-        <module>plugin/trino-jmx</module>
-        <module>plugin/trino-kafka</module>
-        <module>plugin/trino-kafka-event-listener</module>
-        <module>plugin/trino-lakehouse</module>
-        <module>plugin/trino-ldap-group-provider</module>
-        <module>plugin/trino-loki</module>
-        <module>plugin/trino-mariadb</module>
-        <module>plugin/trino-memory</module>
-        <module>plugin/trino-ml</module>
-        <module>plugin/trino-mongodb</module>
-        <module>plugin/trino-mysql</module>
-        <module>plugin/trino-mysql-event-listener</module>
-        <module>plugin/trino-opa</module>
-        <module>plugin/trino-openlineage</module>
-        <module>plugin/trino-opensearch</module>
-        <module>plugin/trino-oracle</module>
-        <module>plugin/trino-password-authenticators</module>
-        <module>plugin/trino-pinot</module>
-        <module>plugin/trino-postgresql</module>
-        <module>plugin/trino-prometheus</module>
-        <module>plugin/trino-ranger</module>
-        <module>plugin/trino-redis</module>
-        <module>plugin/trino-redshift</module>
-        <module>plugin/trino-resource-group-managers</module>
-        <module>plugin/trino-session-property-managers</module>
-        <module>plugin/trino-singlestore</module>
-        <module>plugin/trino-snowflake</module>
-        <module>plugin/trino-spooling-filesystem</module>
-        <module>plugin/trino-sqlserver</module>
-        <module>plugin/trino-teradata-functions</module>
-        <module>plugin/trino-thrift</module>
-        <module>plugin/trino-thrift-api</module>
-        <module>plugin/trino-thrift-testing-server</module>
-        <module>plugin/trino-tpcds</module>
-        <module>plugin/trino-tpch</module>
-        <module>service/trino-proxy</module>
-        <module>service/trino-verifier</module>
-        <module>testing/trino-benchmark-queries</module>
-        <module>testing/trino-benchto-benchmarks</module>
-        <module>testing/trino-faulttolerant-tests</module>
-        <module>testing/trino-plugin-reader</module>
-        <module>testing/trino-product-tests</module>
-        <module>testing/trino-product-tests-groups</module>
-        <module>testing/trino-product-tests-launcher</module>
         <module>testing/trino-server-dev</module>
-        <module>testing/trino-test-jdbc-compatibility-old-driver</module>
-        <module>testing/trino-test-jdbc-compatibility-old-server</module>
         <module>testing/trino-testing</module>
         <module>testing/trino-testing-containers</module>
         <module>testing/trino-testing-kafka</module>
         <module>testing/trino-testing-resources</module>
         <module>testing/trino-testing-services</module>
-        <module>testing/trino-tests</module>
     </modules>
 
     <scm child.scm.connection.inherit.append.path="false" child.scm.developerConnection.inherit.append.path="false" child.scm.url.inherit.append.path="false">
@@ -2855,6 +2780,158 @@
     </build>
 
     <profiles>
+        <!-- Server packaging: ~7GB target. Deactivate with -DskipPackaging -->
+        <profile>
+            <id>with-packaging</id>
+            <activation>
+                <property>
+                    <name>!skipPackaging</name>
+                </property>
+            </activation>
+            <modules>
+                <module>core/trino-server</module>
+                <module>core/trino-server-core</module>
+            </modules>
+        </profile>
+        <!-- All connector and utility plugins: ~15GB target. Deactivate with -DskipPlugins -->
+        <profile>
+            <id>with-plugins</id>
+            <activation>
+                <property>
+                    <name>!skipPlugins</name>
+                </property>
+            </activation>
+            <modules>
+                <module>plugin/trino-ai-functions</module>
+                <module>plugin/trino-base-jdbc</module>
+                <module>plugin/trino-bigquery</module>
+                <module>plugin/trino-blackhole</module>
+                <module>plugin/trino-cassandra</module>
+                <module>plugin/trino-clickhouse</module>
+                <module>plugin/trino-datasketches</module>
+                <module>plugin/trino-delta-lake</module>
+                <module>plugin/trino-druid</module>
+                <module>plugin/trino-duckdb</module>
+                <module>plugin/trino-elasticsearch</module>
+                <module>plugin/trino-example-http</module>
+                <module>plugin/trino-example-jdbc</module>
+                <module>plugin/trino-exasol</module>
+                <module>plugin/trino-exchange-filesystem</module>
+                <module>plugin/trino-exchange-hdfs</module>
+                <module>plugin/trino-faker</module>
+                <module>plugin/trino-functions-python</module>
+                <module>plugin/trino-geospatial</module>
+                <module>plugin/trino-google-sheets</module>
+                <module>plugin/trino-hive</module>
+                <module>plugin/trino-http-event-listener</module>
+                <module>plugin/trino-http-server-event-listener</module>
+                <module>plugin/trino-hudi</module>
+                <module>plugin/trino-iceberg</module>
+                <module>plugin/trino-ignite</module>
+                <module>plugin/trino-jmx</module>
+                <module>plugin/trino-kafka</module>
+                <module>plugin/trino-kafka-event-listener</module>
+                <module>plugin/trino-lakehouse</module>
+                <module>plugin/trino-ldap-group-provider</module>
+                <module>plugin/trino-loki</module>
+                <module>plugin/trino-mariadb</module>
+                <module>plugin/trino-memory</module>
+                <module>plugin/trino-ml</module>
+                <module>plugin/trino-mongodb</module>
+                <module>plugin/trino-mysql</module>
+                <module>plugin/trino-mysql-event-listener</module>
+                <module>plugin/trino-opa</module>
+                <module>plugin/trino-openlineage</module>
+                <module>plugin/trino-opensearch</module>
+                <module>plugin/trino-oracle</module>
+                <module>plugin/trino-password-authenticators</module>
+                <module>plugin/trino-pinot</module>
+                <module>plugin/trino-postgresql</module>
+                <module>plugin/trino-prometheus</module>
+                <module>plugin/trino-ranger</module>
+                <module>plugin/trino-redis</module>
+                <module>plugin/trino-redshift</module>
+                <module>plugin/trino-resource-group-managers</module>
+                <module>plugin/trino-session-property-managers</module>
+                <module>plugin/trino-singlestore</module>
+                <module>plugin/trino-snowflake</module>
+                <module>plugin/trino-spooling-filesystem</module>
+                <module>plugin/trino-sqlserver</module>
+                <module>plugin/trino-teradata-functions</module>
+                <module>plugin/trino-thrift</module>
+                <module>plugin/trino-thrift-api</module>
+                <module>plugin/trino-thrift-testing-server</module>
+                <module>plugin/trino-tpcds</module>
+                <module>plugin/trino-tpch</module>
+            </modules>
+        </profile>
+        <!-- Product tests and launcher. Deactivate with -DskipProductTests -->
+        <profile>
+            <id>with-product-tests</id>
+            <activation>
+                <property>
+                    <name>!skipProductTests</name>
+                </property>
+            </activation>
+            <modules>
+                <module>testing/trino-product-tests</module>
+                <module>testing/trino-product-tests-groups</module>
+                <module>testing/trino-product-tests-launcher</module>
+            </modules>
+        </profile>
+        <!-- Other test suites and benchmarks. Deactivate with -DskipTestSuites -->
+        <profile>
+            <id>with-test-suites</id>
+            <activation>
+                <property>
+                    <name>!skipTestSuites</name>
+                </property>
+            </activation>
+            <modules>
+                <module>testing/trino-benchmark-queries</module>
+                <module>testing/trino-benchto-benchmarks</module>
+                <module>testing/trino-faulttolerant-tests</module>
+                <module>testing/trino-plugin-reader</module>
+                <module>testing/trino-test-jdbc-compatibility-old-driver</module>
+                <module>testing/trino-test-jdbc-compatibility-old-server</module>
+                <module>testing/trino-tests</module>
+            </modules>
+        </profile>
+        <!-- Documentation. Deactivate with -DskipDocs -->
+        <profile>
+            <id>with-docs</id>
+            <activation>
+                <property>
+                    <name>!skipDocs</name>
+                </property>
+            </activation>
+            <modules>
+                <module>docs</module>
+            </modules>
+        </profile>
+        <!-- Services (proxy, verifier). Deactivate with -DskipServices -->
+        <profile>
+            <id>with-services</id>
+            <activation>
+                <property>
+                    <name>!skipServices</name>
+                </property>
+            </activation>
+            <modules>
+                <module>service/trino-proxy</module>
+                <module>service/trino-verifier</module>
+            </modules>
+        </profile>
+        <!-- Skip all checks, tests, source and javadoc jars. Activate with -PskipChecks -->
+        <profile>
+            <id>skipChecks</id>
+            <properties>
+                <air.check.skip-all>true</air.check.skip-all>
+                <skipTests>true</skipTests>
+                <maven.source.skip>true</maven.source.skip>
+                <maven.javadoc.skip>true</maven.javadoc.skip>
+            </properties>
+        </profile>
         <profile>
             <id>errorprone-compiler</id>
             <build>
